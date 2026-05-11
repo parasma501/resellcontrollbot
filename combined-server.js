@@ -370,6 +370,7 @@ bot.onText(/\/generatekey/, (msg) => {
 
 Скопируй и отправь пользователю!
     `, { parse_mode: 'Markdown' });
+    console.log('✅ Ключ отправлен!');
 });
 
 // Проверка ключа (для Electron приложения)
