@@ -154,6 +154,45 @@ bot.onText(/\/status/, (msg) => {
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
 
+bot.onText(/\/rentals/, (msg) => {
+    const chatId = msg.chat.id;
+    const subscription = readSubscription();
+    const now = new Date();
+    
+    // Проверка подписки
+    if (!subscription.isActive || !subscription.expiryDate || new Date(subscription.expiryDate) <= now) {
+        bot.sendMessage(chatId, `
+❌ **Доступ ограничен!**
+
+💎 Ваша подписка истекла.
+Оплачивайте через: /pay
+        `, { parse_mode: 'Markdown' });
+        return;
+    }
+    
+    // Если подписка активна — показываем аренды
+    const data = readRentData();
+    if (!data.rentals || data.rentals.length === 0) {
+        bot.sendMessage(chatId, '📭 Активных аренд нет');
+        return;
+    }
+    const activeRentals = data.rentals.filter(r => new Date(r.end) > new Date());
+    if (activeRentals.length === 0) {
+        bot.sendMessage(chatId, '📭 Активных аренд нет');
+        return;
+    }
+    let message = '🚗 **Активные аренды:**\n\n';
+    activeRentals.forEach((rental, index) => {
+        const endDate = new Date(rental.end);
+        const now = new Date();
+        const diffMs = endDate - now;
+        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+        message += `${index + 1}. *${rental.propertyName}*\n`;
+        message += `   🕐 Окончание: ${formatDateTime(rental.end)} (${diffHours}ч)\n\n`;
+    });
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+});
+
 bot.onText(/\/payments/, (msg) => {
     const chatId = msg.chat.id;
     const data = readPayments();
@@ -167,6 +206,24 @@ bot.onText(/\/payments/, (msg) => {
         message += `   📅 ${formatDateTime(payment.timestamp)}\n\n`;
     });
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/activate/, (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) {
+        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
+        return;
+    }
+    
+    const subscription = readSubscription();
+    subscription.isActive = true;
+    subscription.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    writeSubscription(subscription);
+    
+    bot.sendMessage(msg.chat.id, `
+💎 **Подписка активирована!**
+
+📅 Действует до: ${formatDateTime(subscription.expiryDate)}
+    `, { parse_mode: 'Markdown' });
 });
 
 // ======== ПРОВЕРКА АРЕНД ========
