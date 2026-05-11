@@ -226,6 +226,25 @@ bot.onText(/\/activate/, (msg) => {
     `, { parse_mode: 'Markdown' });
 });
 
+bot.onText(/\/addpayment/, (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) {
+        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
+        return;
+    }
+    
+    const data = readPayments();
+    data.payments.push({
+        order_id: 'manual-' + Date.now(),
+        amount: 1000,  // Сумма платежа
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        user_id: msg.chat.id  // Кто оплатил
+    });
+    writePayments(data);
+    
+    bot.sendMessage(msg.chat.id, '✅ Платеж записан в историю!');
+});
+
 // ======== ПРОВЕРКА АРЕНД ========
 function checkRentalsAndNotify() {
     const data = readRentData();
