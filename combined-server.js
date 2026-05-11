@@ -42,27 +42,6 @@ function writeRentData(data) {
     }
 }
 
-function readKeys() {
-    try {
-        const filePath = path.join(DATA_DIR, 'keys.json');
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-    } catch (error) {
-        console.error('Ошибка чтения keys.json:', error);
-    }
-    return { keys: [] };
-}
-
-function writeKeys(data) {
-    try {
-        const filePath = path.join(DATA_DIR, 'keys.json');
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    } catch (error) {
-        console.error('Ошибка записи keys.json:', error);
-    }
-}
-
 function readSubscription() {
     try {
         const filePath = path.join(DATA_DIR, 'subscription.json');
@@ -102,6 +81,27 @@ function writePayments(data) {
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     } catch (error) {
         console.error('Ошибка записи payments.json:', error);
+    }
+}
+
+function readKeys() {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        }
+    } catch (error) {
+        console.error('Ошибка чтения keys.json:', error);
+    }
+    return { keys: [] };
+}
+
+function writeKeys(data) {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    } catch (error) {
+        console.error('Ошибка записи keys.json:', error);
     }
 }
 
@@ -359,74 +359,6 @@ bot.onText(/\/generatekey/, (msg) => {
 
 Скопируй и отправь пользователю!
     `, { parse_mode: 'Markdown' });
-});
-
-// Активация ключа пользователем
-bot.onText(/\/activatekey/, (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    const key = text.split(' ')[1];
-    
-    if (!key) {
-        bot.sendMessage(chatId, 'Используй: /activatekey ТВОЙ_КЛЮЧ');
-        return;
-    }
-    
-    const keys = readKeys();
-    const found = keys.find(k => k.key === key);
-    
-    if (!found) {
-        bot.sendMessage(chatId, '❌ Неверный ключ!');
-        return;
-    }
-    
-    if (found.used) {
-        bot.sendMessage(chatId, '❌ Ключ уже использован!');
-        return;
-    }
-    
-    // Активируем ключ
-    found.used = true;
-    found.activatedBy = chatId;
-    found.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    writeKeys(keys);
-    
-    // Обновляем подписку пользователя
-    const subscription = readSubscription();
-    subscription.isActive = true;
-    subscription.expiryDate = found.expiryDate;
-    writeSubscription(subscription);
-    
-    bot.sendMessage(chatId, `
-✅ **Ключ активирован!**
-
-💎 Подписка активна до: ${formatDateTime(found.expiryDate)}
-    `, { parse_mode: 'Markdown' });
-});
-
-// Проверка ключа (для Electron приложения)
-app.post('/checkkey', (req, res) => {
-    const { key } = req.body;
-    
-    const keys = readKeys();
-    const found = keys.find(k => k.key === key);
-    
-    if (!found || !found.used || !found.expiryDate) {
-        return res.json({ valid: false, message: 'Неверный ключ' });
-    }
-    
-    const now = new Date();
-    const expiry = new Date(found.expiryDate);
-    
-    if (now > expiry) {
-        return res.json({ valid: false, message: 'Ключ истёк' });
-    }
-    
-    res.json({ 
-        valid: true, 
-        expiryDate: found.expiryDate,
-        activatedBy: found.activatedBy
-    });
 });
 
 // ======== ПРОВЕРКА АРЕНД ========
