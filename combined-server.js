@@ -42,6 +42,27 @@ function writeRentData(data) {
     }
 }
 
+function readKeys() {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        }
+    } catch (error) {
+        console.error('Ошибка чтения keys.json:', error);
+    }
+    return { keys: [] };
+}
+
+function writeKeys(data) {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    } catch (error) {
+        console.error('Ошибка записи keys.json:', error);
+    }
+}
+
 function readSubscription() {
     try {
         const filePath = path.join(DATA_DIR, 'subscription.json');
