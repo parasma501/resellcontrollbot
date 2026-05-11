@@ -340,6 +340,101 @@ app.post('/checkkey', (req, res) => {
     });
 });
 
+// Генерация ключа (только админ)
+bot.onText(/\/generatekey/, (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) {
+        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
+        return;
+    }
+    
+    const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const keys = readKeys();
+    keys.push({
+        key: key,
+        used: false,
+        activatedBy: null,
+        expiryDate: null,
+        createdAt: new Date().toISOString()
+    });
+    writeKeys(keys);
+    
+    bot.sendMessage(msg.chat.id, `
+🔑 **Новый ключ активации:**
+
+\`${key}\`
+
+Скопируй и отправь пользователю!
+    `, { parse_mode: 'Markdown' });
+});
+
+// Активация ключа пользователем
+bot.onText(/\/activatekey/, (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+    const key = text.split(' ')[1];
+    
+    if (!key) {
+        bot.sendMessage(chatId, 'Используй: /activatekey ТВОЙ_КЛЮЧ');
+        return;
+    }
+    
+    const keys = readKeys();
+    const found = keys.find(k => k.key === key);
+    
+    if (!found) {
+        bot.sendMessage(chatId, '❌ Неверный ключ!');
+        return;
+    }
+    
+    if (found.used) {
+        bot.sendMessage(chatId, '❌ Ключ уже использован!');
+        return;
+    }
+    
+    // Активируем ключ
+    found.used = true;
+    found.activatedBy = chatId;
+    found.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    writeKeys(keys);
+    
+    // Обновляем подписку пользователя
+    const subscription = readSubscription();
+    subscription.isActive = true;
+    subscription.expiryDate = found.expiryDate;
+    writeSubscription(subscription);
+    
+    bot.sendMessage(chatId, `
+✅ **Ключ активирован!**
+
+💎 Подписка активна до: ${formatDateTime(found.expiryDate)}
+    `, { parse_mode: 'Markdown' });
+});
+
+// Проверка ключа (для Electron приложения)
+app.post('/checkkey', (req, res) => {
+    const { key } = req.body;
+    
+    const keys = readKeys();
+    const found = keys.find(k => k.key === key);
+    
+    if (!found || !found.used || !found.expiryDate) {
+        return res.json({ valid: false, message: 'Неверный ключ' });
+    }
+    
+    const now = new Date();
+    const expiry = new Date(found.expiryDate);
+    
+    if (now > expiry) {
+        return res.json({ valid: false, message: 'Ключ истёк' });
+    }
+    
+    res.json({ 
+        valid: true, 
+        expiryDate: found.expiryDate,
+        activatedBy: found.activatedBy
+    });
+});
+
 // ======== ПРОВЕРКА АРЕНД ========
 function checkRentalsAndNotify() {
     const data = readRentData();
