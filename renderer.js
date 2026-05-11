@@ -2244,6 +2244,7 @@ resetPassCalc();
   initScrollToTopRent();
 renderProperties();
 renderRentalsForCurrentProperty();
+  checkSubscription();
 initRentMonthSelectors();
 updateRentMonthControls();
 updateRentStats();
@@ -2906,3 +2907,86 @@ document.addEventListener('click', (e) => {
         closeEndRentalModal();
     }
 });
+
+// ======== ПРОВЕРКА ПОДПИСКИ И АКТИВАЦИЯ КЛЮЧА ========
+
+// Проверка подписки при запуске
+async function checkSubscription() {
+    try {
+        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: localStorage.getItem('activationKey') || '' })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+            // Подписка активна
+            localStorage.setItem('subscription', JSON.stringify({
+                isActive: true,
+                expiryDate: result.expiryDate
+            }));
+            hideActivationModal();
+        } else {
+            // Подписка истекла или нет ключа
+            localStorage.removeItem('activationKey');
+            showActivationModal();
+        }
+    } catch (error) {
+        console.error('Ошибка проверки подписки:', error);
+        showActivationModal();
+    }
+}
+
+// Показать модалку активации
+function showActivationModal() {
+    const modal = document.getElementById('activationModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+// Скрыть модалку активации
+function hideActivationModal() {
+    const modal = document.getElementById('activationModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Активировать ключ
+async function activateKey() {
+    const keyInput = document.getElementById('activationKeyInput');
+    const key = keyInput ? keyInput.value.trim() : '';
+    
+    if (!key) {
+        alert('Введите ключ!');
+        return;
+    }
+    
+    try {
+        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+            localStorage.setItem('activationKey', key);
+            localStorage.setItem('subscription', JSON.stringify({
+                isActive: true,
+                expiryDate: result.expiryDate
+            }));
+            hideActivationModal();
+            alert('✅ Ключ активирован!');
+        } else {
+            alert('❌ ' + result.message);
+        }
+    } catch (error) {
+        console.error('Ошибка активации:', error);
+        alert('Ошибка подключения к серверу');
+    }
+}
