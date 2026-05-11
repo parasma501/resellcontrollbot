@@ -136,6 +136,27 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, welcomeMessage);
 });
 
+bot.onText(/\/help/, (msg) => {
+    const chatId = msg.chat.id;
+    const helpMessage = `
+📖 **Помощь:**
+
+/start - Стартовое сообщение
+/help - Показать помощь
+/status - Проверить статус подписки
+/pay - Оплата подписки
+/rentals - Активные аренды
+/payments - История платежей
+/activatekey КЛЮЧ - Активация ключа
+
+🔧 **Админ-команды:**
+/generatekey - Создать ключ
+/activate - Вручную активировать
+/addpayment - Записать платёж
+    `;
+    bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+});
+
 bot.onText(/\/pay/, (msg) => {
     const chatId = msg.chat.id;
     // Здесь будет ссылка на оплату через Palych
@@ -309,31 +330,6 @@ bot.onText(/\/activatekey/, (msg) => {
     `, { parse_mode: 'Markdown' });
 });
 
-// Проверка ключа (для Electron приложения)
-app.post('/checkkey', (req, res) => {
-    const { key } = req.body;
-    
-    const keys = readKeys();
-    const found = keys.find(k => k.key === key);
-    
-    if (!found || !found.used || !found.expiryDate) {
-        return res.json({ valid: false, message: 'Неверный ключ' });
-    }
-    
-    const now = new Date();
-    const expiry = new Date(found.expiryDate);
-    
-    if (now > expiry) {
-        return res.json({ valid: false, message: 'Ключ истёк' });
-    }
-    
-    res.json({ 
-        valid: true, 
-        expiryDate: found.expiryDate,
-        activatedBy: found.activatedBy
-    });
-});
-
 // Генерация ключа (только админ)
 bot.onText(/\/generatekey/, (msg) => {
     if (msg.chat.id.toString() !== ADMIN_ID) {
@@ -359,6 +355,31 @@ bot.onText(/\/generatekey/, (msg) => {
 
 Скопируй и отправь пользователю!
     `, { parse_mode: 'Markdown' });
+});
+
+// Проверка ключа (для Electron приложения)
+app.post('/checkkey', (req, res) => {
+    const { key } = req.body;
+    
+    const keys = readKeys();
+    const found = keys.find(k => k.key === key);
+    
+    if (!found || !found.used || !found.expiryDate) {
+        return res.json({ valid: false, message: 'Неверный ключ' });
+    }
+    
+    const now = new Date();
+    const expiry = new Date(found.expiryDate);
+    
+    if (now > expiry) {
+        return res.json({ valid: false, message: 'Ключ истёк' });
+    }
+    
+    res.json({ 
+        valid: true, 
+        expiryDate: found.expiryDate,
+        activatedBy: found.activatedBy
+    });
 });
 
 // ======== ПРОВЕРКА АРЕНД ========
