@@ -347,7 +347,11 @@ bot.onText(/\/generatekey/, (msg) => {
 
     
     const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    console.log('🔑 Сгенерирован ключ:', key);
+
+    console.log('📂 Читаю keys.json...');
     const keys = readKeys();
+    console.log('📂 Прочитано ключей:', keys.keys.length);
     keys.push({
         key: key,
         used: false,
@@ -355,7 +359,9 @@ bot.onText(/\/generatekey/, (msg) => {
         expiryDate: null,
         createdAt: new Date().toISOString()
     });
+     console.log('📂 Записываю keys.json...');
     writeKeys(keys);
+    console.log('📂 keys.json записан!');
     
     bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
