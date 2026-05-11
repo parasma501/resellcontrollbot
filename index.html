@@ -711,5 +711,15 @@
 </div>
 </div>
 
+<!-- Модалка активации ключа -->
+<div id="activationModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;justify-content:center;align-items:center;">
+    <div style="background:#1a1f2e;padding:30px;border-radius:10px;max-width:400px;width:90%;">
+        <h2 style="color:#fff;margin-bottom:20px;">💎 Активация подписки</h2>
+        <p style="color:#aaa;margin-bottom:20px;">Введите ключ активации для доступа к приложению:</p>
+        <input type="text" id="activationKeyInput" placeholder="RES-XXXXXXXX" style="width:100%;padding:10px;margin-bottom:20px;background:#2a3040;border:1px solid #444;color:#fff;border-radius:5px;">
+        <button onclick="activateKey()" style="width:100%;padding:12px;background:#28c06a;border:none;border-radius:5px;color:#fff;font-weight:bold;cursor:pointer;">АКТИВИРОВАТЬ</button>
+    </div>
+</div>
+
 </body>
 </html>
