@@ -332,10 +332,19 @@ bot.onText(/\/activatekey/, (msg) => {
 
 // Генерация ключа (только админ)
 bot.onText(/\/generatekey/, (msg) => {
+    console.log('🔑 /generatekey вызван!');
+
+    console.log('User ID:', msg.chat.id);
+    console.log('Admin ID:', ADMIN_ID);
+
+    
     if (msg.chat.id.toString() !== ADMIN_ID) {
         bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
         return;
     }
+
+            const expiry = new Date(subscription.expiryDate);
+
     
     const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
     const keys = readKeys();
