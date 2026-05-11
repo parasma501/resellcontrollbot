@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://raw.githubusercontent.com https://github.com; img-src 'self' data:; frame-src 'none';">
+<title>Перепродажа GTA5RP</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
+
+</head>
+<body>
+<div class="app-titlebar">
+  <div class="titlebar-left">
+    <div class="burger-wrap">
+      <button class="titlebar-btn burger" id="burgerBtn" onclick="toggleNavMenu()" title="Разделы">☰</button>
+<div class="flyout" id="navMenu">
+  <button class="nav-item active" data-screen-btn="resell" onclick="switchScreen('resell')">Перекуп</button>
+
+  <button class="nav-item nav-item-stack" data-screen-btn="bp" onclick="switchScreen('bp')">
+    <span class="nav-item-main">Фарм</span>
+    <span class="nav-item-sub">бонус поинтов</span>
+  </button>
+
+  <button class="nav-item" data-screen-btn="timers" onclick="switchScreen('timers')">Таймеры</button>
+  <button class="nav-item" data-screen-btn="rent" onclick="switchScreen('rent')">Аренда</button>
+    <button class="nav-item" data-screen-btn="pass" onclick="switchScreen('pass')">Пропуск</button>
+  <button class="nav-item" data-screen-btn="settings" onclick="switchScreen('settings')">Настройки</button>
+  
+</div>
+    </div>
+    <div>
+      <div class="titlebar-brand">
+  Resell <span>Control</span>
+  <span class="app-edition" id="appEditionBadge">PRO</span>
+</div>
+      <div class="titlebar-subtitle" id="titlebarSubtitle">Перекуп</div>
+    </div>
+  </div>
+  <div class="titlebar-actions">
+    <button class="titlebar-btn help" id="helpBtn" onclick="toggleHelpMenu()" title="Помощь и обновления">?</button>
+    <div class="help-menu" id="helpMenu">
+      <div class="help-title">Помощь и обновления</div>
+      <div class="help-sub">Версия приложения: <span id="currentVersionLabel">—</span></div>
+      <button class="help-item" onclick="openDiscord()">Сообщить о баге / открыть Discord</button>
+      <button class="help-item" onclick="openDownloadPage()">Открыть страницу загрузки</button>
+<div class="help-row"><button class="help-item" onclick="checkForUpdates(true)">Проверить обновление</button></div>
+      <div id="updateInfoBlock" style="display:none">
+        <div style="margin-top:12px"><span class="update-badge">Доступно обновление</span></div>
+        <div class="help-notes"><strong id="updateVersionText">Новая версия</strong><div id="updateNotesText">Описание обновления</div></div>
+        <div class="help-row"><button class="help-item" onclick="openExternalUrl(updateInfo.downloadUrl)">Скачать обновление</button></div>
+      </div>
+      <div class="help-status" id="helpStatus">Проверка обновлений при запуске включена.</div>
+    </div>
+    <button class="titlebar-btn min" onclick="appMinimize()" title="Свернуть">—</button>
+    <button class="titlebar-btn close" onclick="appClose()" title="Закрыть">✕</button>
+  </div>
+</div>
+
+<div class="app-shell">
+   <div class="screen" id="rentScreen">
+<div class="rent-layout">
+<div class="rent-sidebar">
+<div class="sidebar-header">
+<h3>Имущество</h3>
+<div style="display:flex;gap:8px">
+<button class="btn btn-dark icon-btn" onclick="openRentHistoryModal()" title="История аренды">📋</button>
+<button class="btn btn-green icon-btn" onclick="addNewProperty()" title="Добавить имущество">+</button>
+</div>
+</div>
+<div class="property-list" id="propertyList"></div>
+</div>
+<div class="rent-main">
+<div class="rent-header">
+<div class="rent-title-section">
+<input type="text" id="propertyName" class="rent-category-input" placeholder="Название">
+<input type="text" id="propertyDescription" class="rent-description-input" placeholder="Описание">
+</div>
+<div class="rent-photo-section">
+<div class="rent-photo-preview" id="rentPhotoPreview">Нет фото</div>
+</div>
+</div>
+<div class="filter-row">
+<button class="filter-chip active" data-filter="all" onclick="setRentFilter('all')">Все время</button>
+<button class="filter-chip" data-filter="today" onclick="setRentFilter('today')">Сегодня</button>
+<button class="filter-chip" data-filter="week" onclick="setRentFilter('week')">Неделя</button>
+<button class="filter-chip" data-filter="month" onclick="setRentFilter('month')">Месяц</button>
+<div class="dates-row" id="rentMonthPeriodControls" style="display:none;">
+<select id="rentMonthSelect" onchange="changeRentMonth()"></select>
+<select id="rentYearSelect" onchange="changeRentMonth()"></select>
+</div>
+</div>
+<div class="stats-line">
+<div class="stat-mini"><strong>Деньги</strong><span id="rentIncome">0$</span></div>
+<div class="stat-mini"><strong>Комментарий</strong><span id="rentComment">-</span></div>
+<div class="stat-mini"><strong>Дата</strong><span id="rentDate">-</span></div>
+</div>
+<div class="rent-deal-btn" style="display:flex;gap:8px">
+<button class="btn btn-green" style="flex:1" onclick="openDealModal()">Новая сделка</button>
+<button class="btn btn-yellow" style="flex:1" onclick="openEndRentalModal()">Досрочное завершение</button>
+</div>
+</div>
+</div>
+</div>
+
+<div class="screen" id="passScreen">
+  <div class="pass-panel">
+    <h2 class="section-title">Расчёт пропуска</h2>
+    
+    <div class="pass-result">
+      <div class="pass-result-main">
+      </div>
+      <div class="pass-result-sub">
+        <div class="pass-result-item">
+          <div class="pass-result-label">Дней в пропуске</div>
+          <input type="number" id="passDays" value="90" min="1" max="365" onchange="calculatePass()" style="width:100%;text-align:center">
+        </div>
+        <div class="pass-result-item">
+          <div class="pass-result-label">Целевой уровень</div>
+          <input type="number" id="passTargetLevel" value="115" min="1" max="999" onchange="calculatePass()" style="width:100%;text-align:center">
+        </div>
+        <div class="pass-result-item">
+          <div class="pass-result-label">Текущий уровень</div>
+          <input type="number" id="passCurrentLevel" value="1" min="1" max="999" onchange="calculatePass()" style="width:100%;text-align:center">
+        </div>
+      </div>
+    </div>
+    
+    <div class="pass-settings">
+  <div class="pass-setting-group">
+    <label>Сервер</label>
+    <select id="passServerSelect" onchange="calculatePass()">
+      <option value="0">Без бонуса</option>
+      <option value="0.1">Downtown (+10%)</option>
+      <option value="0.1">Sunrise (+10%)</option>
+      <option value="0.1">Richman (+10%)</option>
+      <option value="0.1">Rockford (+10%)</option>
+      <option value="0.1">Grapeseed (+10%)</option>
+      <option value="0.1">Vespucci (+10%)</option>
+      <option value="0.2">Strawberry (+20%)</option>
+      <option value="0.2">Vinewood (+20%)</option>
+      <option value="0.2">Blackberry (+20%)</option>
+      <option value="0.2">Insquad (+20%)</option>
+      <option value="0.2">Rainbow (+20%)</option>
+      <option value="0.2">La Mesa (+20%)</option>
+      <option value="0.2">Burton (+20%)</option>
+      <option value="0.2">Alta (+20%)</option>
+      <option value="0.2">Del Perro (+20%)</option>
+      <option value="0.2">Davis (+20%)</option>
+      <option value="0.2">Harmony (+20%)</option>
+      <option value="0.2">Hawick (+20%)</option>
+    </select>
+  </div>
+  <div class="pass-setting-group">
+    <label>Х2 дни (дней)</label>
+    <input type="number" id="passDoubleDays" value="0" min="0" max="90" onchange="calculatePass()">
+  </div>
+  <div class="pass-setting-group">
+    <label>Дней планирую играть</label>
+    <input type="number" id="passPlannedDays" value="90" min="1" max="90" onchange="calculatePass()">
+  </div>
+  <div class="pass-setting-group">
+    <label>Обычные кейсы</label>
+    <input type="number" id="passNormalCases" value="0" min="0" max="44" onchange="calculatePass()">
+  </div>
+  <div class="pass-setting-group">
+    <label>Автомобильные кейсы</label>
+    <input type="number" id="passCarCases" value="0" min="0" max="7" onchange="calculatePass()">
+  </div>
+</div>
+    
+    <div class="pass-calculations">
+<!-- Сетка из 3 колонок -->
+<div class="pass-calc-grid">
+  <!-- Левая колонка -->
+  <div class="pass-calc-column">
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Базовый опыт</div>
+      <div class="pass-calc-value" id="baseXP">6.000</div>
+    </div>
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Текущий опыт</div>
+      <div class="pass-calc-value" id="currentXPValue">0</div>
+    </div>
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Бонус сервера</div>
+      <div class="pass-calc-value" id="serverBonusXP">+0%</div>
+    </div>
+  </div>
+  
+  <!-- Средняя колонка -->
+  <div class="pass-calc-column">
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Усилитель x2</div>
+      <div class="pass-calc-value" id="boosterXP">12.000</div>
+    </div>
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Осталось опыта</div>
+      <div class="pass-calc-value" id="remainingXP">758.000</div>
+    </div>
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Всего до цели</div>
+      <div class="pass-calc-value" id="totalToTarget">758.100</div>
+    </div>
+  </div>
+  
+  <!-- Правая колонка -->
+  <div class="pass-calc-column">
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Автокейсы</div>
+      <div class="pass-calc-value" id="carCasesXP">0</div>
+    </div>
+    <div class="pass-calc-item">
+      <div class="pass-calc-label">Обычные кейсы</div>
+      <div class="pass-calc-value" id="normalCasesXP">0</div>
+    </div>
+    <div class="pass-calc-item">
+      <button class="btn btn-dark" onclick="resetPassCalc()" style="width:100%;min-height:38px;font-size:13px">Сброс</button>
+    </div>
+  </div>
+</div>
+</div>
+      
+    <!-- Шкала прогресса -->
+    <div class="pass-calc-progress">
+      <div class="pass-calc-progress-bar" id="passProgress">
+        <div class="pass-calc-progress-fill" id="passProgressFill"></div>
+      </div>
+      <div class="pass-calc-progress-text" id="passProgressText">0%</div>
+    </div>
+    
+    <!-- Статус -->
+    <div class="pass-calc-status" id="passStatus">
+      Введите данные для прогноза
+    </div>
+    
+    <!-- Скрытые поля для JS -->
+    <div class="pass-calc-hidden" id="remainingToTarget">0</div>
+    <div class="pass-calc-hidden" id="totalXPGained">0</div>
+  </div>
+  
+  <div class="pass-info">
+    <h4>Информация:</h4>
+    <ul>
+      <li>Базовый опыт: 6000 в день (12000 при Х2)</li>
+      <li>Обычный кейс: +1000 опыта</li>
+      <li>Автокейс: +5000 опыта</li>
+      <li>Максимум кейсов в усилителе: 44 обычных + 7 авто</li>
+    </ul>
+  </div>
+</div>
+
+  <div class="screen" id="settingsScreen">
+    <div class="dev-screen">
+      <div class="dev-screen-text">В разработке</div>
+    </div>
+  </div>
+  <div class="screen active" id="resellScreen">
+    <div class="resell-layout">
+      <div class="panel" style="display:flex;flex-direction:column;min-height:0">
+        <h2 class="section-title">Статистика</h2>
+        <p class="section-sub">Двухколоночный компактный режим: слева операции, справа товары.</p>
+        <div class="row-flex stats-inputs-row">
+  <input type="text" id="leftName" placeholder="Комментарий">
+  <input type="text" inputmode="numeric" class="text-money stats-sum-input" id="leftBuy" placeholder="Сумма">
+  <button class="btn btn-green icon-btn" onclick="manualAddLeftProfit(event)" title="Добавить запись">+</button>
+</div>
+
+<div class="filter-row">
+  <button class="filter-chip active" data-filter="all" onclick="setOperationFilter('all')">Все время</button>
+  <button class="filter-chip" data-filter="today" onclick="setOperationFilter('today')">Сегодня</button>
+  <button class="filter-chip" data-filter="week" onclick="setOperationFilter('week')">Неделя</button>
+  <button class="filter-chip" data-filter="month" onclick="setOperationFilter('month')">Месяц</button>
+  <div class="dates-row" id="monthPeriodControls" style="display:none;">
+    <select id="monthSelect" onchange="changeStatsMonth()">
+      <option value="0">Январь</option>
+      <option value="1">Февраль</option>
+      <option value="2">Март</option>
+      <option value="3">Апрель</option>
+      <option value="4">Май</option>
+      <option value="5">Июнь</option>
+      <option value="6">Июль</option>
+      <option value="7">Август</option>
+      <option value="8">Сентябрь</option>
+      <option value="9">Октябрь</option>
+      <option value="10">Ноябрь</option>
+      <option value="11">Декабрь</option>
+    </select>
+    <select id="yearSelect" onchange="changeStatsMonth()"></select>
+  </div>
+</div>
+
+
+        <div class="stats-line">
+          <div class="stat-mini"><strong>Доход</strong><span id="income">0$</span></div>
+          <div class="stat-mini"><strong>Расход</strong><span id="expense">0$</span></div>
+          <div class="stat-mini"><strong>Прибыль</strong><span id="profit">0$</span></div>
+        </div>
+        <div class="operations-wrap">
+          <div class="operations-head"><div>Деньги</div><div>Комментарий</div><div>Чистая прибыль</div><div>Дата</div><div></div></div>
+          <div class="operations-body" id="operationsTable"></div>
+        </div>
+        <button class="btn btn-red" style="width:100%;margin-top:8px" onclick="confirmResetStats()">Сбросить статистику</button>
+      </div>
+      <div class="panel inventory-panel">
+        <h2 class="section-title" style="margin-bottom:4px">Товары</h2>
+        <div class="items-top">
+          <input type="text" id="search" placeholder="Поиск...">
+          <button class="btn btn-green icon-btn" onclick="openAddModal()" title="Добавить товар">+</button>
+        </div>
+        <div class="items-scroll">
+          <div class="section-block stock-section" style="min-height:0"><h3>В продаже</h3><div class="items-grid" id="inStock"></div></div>
+          <div class="section-block sold-section" style="margin-top:8px;min-height:0"><h3>Продано</h3><div class="items-grid" id="soldItems"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="bpScreen">
+  <div class="panel bp-panel">
+    <div class="bp-header">
+      <div>
+        <h2 class="section-title" style="margin-bottom:6px">Farm BP</h2>
+        <p class="section-sub" style="margin-bottom:0">Закрепляй нужные пункты, а частые действия программа поднимет выше сама.</p>
+      </div>
+      <div class="bp-total">Всего BP<strong id="bpTotal">0</strong></div>
+    </div>
+
+    <div class="bp-toolbar">
+      <input class="bp-search" id="bpSearch" placeholder="Поиск по Farm BP..." oninput="renderBpTasks()">
+      <div class="mode-row bp-mode-row">
+        <button class="mode-btn active" data-bp-mode="base" onclick="setBpMode('base')">Без VIP</button>
+        <button class="mode-btn" data-bp-mode="base_x2" onclick="setBpMode('base_x2')">x2 Без VIP</button>
+        <button class="mode-btn" data-bp-mode="vip" onclick="setBpMode('vip')">Gold / Platinum VIP</button>
+        <button class="mode-btn" data-bp-mode="vip_x2" onclick="setBpMode('vip_x2')">x2 Gold / Platinum VIP</button>
+      </div>
+    </div>
+
+    <div class="bp-toolbar">
+      <div class="mode-row">
+        <button class="mode-btn active" data-bp-group-filter="all" onclick="setBpGroupFilter('all')">Все</button>
+        <button class="mode-btn" data-bp-group-filter="pair" onclick="setBpGroupFilter('pair')">Парные</button>
+        <button class="mode-btn" data-bp-group-filter="single" onclick="setBpGroupFilter('single')">Одиночные</button>
+      </div>
+      <select id="bpDifficultyFilter" onchange="setBpDifficultyFilter(this.value)">
+        <option value="all">Все сложности</option>
+        <option value="easy">Лёгкие</option>
+        <option value="medium">Средние</option>
+        <option value="hard">Сложные</option>
+      </select>
+    </div>
+
+    <div class="bp-list" id="bpList"></div>
+
+    <div class="panel-tip bp-tip">
+      <span>Сверху: закрепленные, потом частые, потом остальной список.</span>
+      <div class="bp-tip-actions">
+        <button class="btn btn-dark" onclick="clearBpPins()">Снять закрепы</button>
+        <button class="btn btn-dark" onclick="clearBpHistory()">Сбросить умную сортировку</button>
+        <button class="btn btn-dark" onclick="resetBpTasks()">Сбросить галочки</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="timersScreen">
+  <div class="panel timers-scroll">
+    <h3 class="side-title">Таймеры Farm BP</h3>
+    <div class="side-sub">Кастомный таймер, быстрые подсказки с отдельными отсчётами и блок Деморгана с удобной перестановкой.</div>
+    <div id="topAnchor"></div>
+
+    <div class="panel-card" id="customTimerBlock">
+      <h4 class="card-title">Кастомный таймер</h4>
+      <div class="card-sub">Задай своё время прямо в больших цифрах, запусти отсчёт и настрой количество сигналов окончания так, как удобно тебе.</div>
+      <div class="settings-row">
+        <span>Повтор сигнала</span>
+        <input class="settings-input" id="beepRepeatsInput" type="number" min="1" max="10" value="3" onchange="saveBeepRepeats()">
+        <span>раз</span>
+      </div>
+
+      <input id="customTimerName" class="custom-timer-name" placeholder="Название таймера">
+
+      <div class="custom-editor-layout">
+        <div class="custom-time-editor wide" id="customTimeEditor">
+  <div class="custom-time-display">
+    <input id="customTimerHours" class="custom-time-part" type="number" min="0" value="0">
+    <span class="custom-time-separator">:</span>
+    <input id="customTimerMinutes" class="custom-time-part" type="number" min="0" max="59" value="1">
+    <span class="custom-time-separator">:</span>
+    <input id="customTimerSeconds" class="custom-time-part" type="number" min="0" max="59" value="0">
+  </div>
+
+  <div class="custom-presets inside">
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(1)">1</button>
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(5)">5</button>
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(15)">15</button>
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(30)">30</button>
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(60)">60</button>
+    <button class="preset-btn" type="button" onclick="applyCustomPreset(90)">90</button>
+  </div>
+</div>
+     <div class="timer-actions">
+        <button class="btn btn-green" onclick="startCustomEditorTimer()">Старт</button>
+        <button class="btn btn-dark" onclick="pauseTimer('custom')">Пауза</button>
+        <button class="btn btn-yellow" onclick="resetTimer('custom')">Сброс</button>
+      </div>
+    </div>
+  </div>
+
+    <div class="timers-workspace">
+  <div class="timers-column">
+    <div class="timers-column-head">
+      <h4 class="card-title">Быстрые таймеры</h4>
+      <div class="card-sub">Встроенные таймеры для быстрых действий.</div>
+    </div>
+    <div class="hints-grid hints-grid-left" id="hintsGrid"></div>
+  </div>
+
+  <div class="timers-column user-timers-column">
+    <div class="timers-column-head">
+      <h4 class="card-title">Мои таймеры</h4>
+      <div class="card-sub">Новые таймеры будут появляться здесь.</div>
+    </div>
+
+    <div class="user-timers-list" id="userTimersList">
+      <div class="user-timers-empty" id="userTimersEmpty">
+        Здесь будут созданные таймеры.
+      </div>
+    </div>
+  </div>
+</div>
+
+    <div class="panel-card" id="demorganBlock">
+      <div class="demorgan-header">
+        <div>
+          <h4 class="card-title">Таймеры Деморгана</h4>
+          <div class="card-sub">Два фиксированных таймера в одном блоке. Этот блок можно поднять выше или вернуть вниз.</div>
+        </div>
+        <button class="btn btn-dark" id="demorganMoveBtn" onclick="toggleDemorganPosition()">Переместить наверх</button>
+      </div>
+      <div class="demorgan-grid">
+        <div class="timer-card">
+          <div class="timer-card-top"><div><div class="timer-name">Деморган — Коробка</div><div class="timer-mini">Фиксированное время: 1 минута 09 секунд</div></div><div class="timer-pill">01:09</div></div>
+          <div class="timer-big" id="demorganBoxDisplay">01:09</div>
+          <div class="timer-actions"><button class="btn btn-green" onclick="startTimer('demorganBox')">Старт</button><button class="btn btn-dark" onclick="pauseTimer('demorganBox')">Пауза</button><button class="btn btn-yellow" onclick="resetTimer('demorganBox')">Сброс</button></div>
+        </div>
+        <div class="timer-card">
+          <div class="timer-card-top"><div><div class="timer-name">Деморган — Швейка</div><div class="timer-mini">Фиксированное время: 1 минута 29 секунд</div></div><div class="timer-pill">01:29</div></div>
+          <div class="timer-big" id="demorganSewDisplay">01:29</div>
+          <div class="timer-actions"><button class="btn btn-green" onclick="startTimer('demorganSew')">Старт</button><button class="btn btn-dark" onclick="pauseTimer('demorganSew')">Пауза</button><button class="btn btn-yellow" onclick="resetTimer('demorganSew')">Сброс</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="bottomAnchor"></div>
+  </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+</div>
+</div>
+
+</div>
+<div class="modal" id="addModal">
+  <div class="modal-content wide" id="addModalContent" tabindex="0" onpaste="handlePaste(event)">
+    <button class="modal-close" onclick="closeAddModal()">X</button>
+    <div id="modalLeft">
+      <input type="text" id="modalName" placeholder="Название товара" autofocus>
+      <input type="text" inputmode="numeric" class="text-money" id="modalBuy" placeholder="Цена покупки">
+      <input type="text" inputmode="numeric" class="text-money" id="modalSell" placeholder="Цена продажи">
+      <button class="btn btn-green" onclick="confirmAddItem()">Сохранить</button>
+    </div>
+    <div id="modalRight"><div id="modalImgContainer">Вставьте фото через Ctrl+V</div></div>
+  </div>
+</div>
+
+<div class="modal" id="sellModal">
+  <div class="modal-content narrow">
+    <button class="modal-close" onclick="closeSellModal()">X</button>
+    <h3 style="margin:0">Продажа товара</h3>
+    <input type="text" inputmode="numeric" class="text-money" id="sellInput" placeholder="Введите сумму продажи" autofocus>
+    <button class="btn btn-green" onclick="confirmSell()">Сохранить</button>
+  </div>
+</div>
+
+<div class="modal" id="resetConfirmModal">
+  <div class="modal-content narrow">
+    <button class="modal-close" onclick="closeResetModal()">X</button>
+    <h3 style="margin:0">Что сбросить?</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.45;margin-top:2px;margin-bottom:8px">
+      Выберите, какую часть данных нужно очистить.
+    </div>
+
+<button class="btn btn-red reset-choice-btn reset-choice-danger" onclick="resetAllData()">Сбросить всё</button>
+<button class="btn btn-dark reset-choice-btn reset-choice-soft" onclick="resetLeftSide()">Сбросить список статистики</button>
+<button class="btn btn-dark reset-choice-btn reset-choice-soft" onclick="resetRightSide()">Сбросить карточки товаров</button>
+<button class="btn btn-dark reset-choice-btn reset-choice-cancel" onclick="closeResetModal()">Отмена</button>
+  </div>
+</div>
+
+<button id="scrollToTopBtn" class="scroll-to-top-btn" onclick="scrollCurrentScreenToTop()" title="Наверх">
+  ↑
+</button>
+
+
+<div class="autocomplete-container" id="autocompleteContainer">
+  <div class="autocomplete-list" id="autocompleteList"></div>
+</div>
+<script src="./renderer.js"></script>
+
+<div class="modal" id="dealModal">
+<div class="modal-content deal-modal" id="dealModalContent" tabindex="0">
+<button class="modal-close" onclick="closeDealModal()">X</button>
+<h3 style="margin:0 0 12px">Новая сделка</h3>
+<div class="deal-templates">
+<button class="template-btn" onclick="applyDealTemplate(1)">1ч</button>
+<button class="template-btn" onclick="applyDealTemplate(2)">2ч</button>
+<button class="template-btn" onclick="applyDealTemplate(4)">4ч</button>
+<button class="template-btn" onclick="applyDealTemplate(6)">6ч</button>
+<button class="template-btn" onclick="applyDealTemplate(12)">12ч</button>
+<button class="template-btn" onclick="applyDealTemplate(24)">24ч</button>
+<button class="template-btn" onclick="applyDealTemplate(48)">48ч</button>
+<button class="template-btn" onclick="applyDealTemplate(99)">99ч</button>
+</div>
+<div class="deal-row">
+<div class="deal-field">
+<label>Начало</label>
+<input type="datetime-local" id="dealStart">
+</div>
+<div class="deal-field">
+<label>Конец</label>
+<input type="datetime-local" id="dealEnd">
+</div>
+</div>
+<div class="deal-row">
+<div class="deal-field">
+<label>Кол-во часов</label>
+<input type="number" id="dealHours" min="1" value="1">
+</div>
+<div class="deal-field">
+<label>Цена за час</label>
+<input type="text" inputmode="numeric" class="text-money" id="dealPricePerHour" placeholder="0">
+</div>
+<div class="deal-field">
+<label>Сумма</label>
+<input type="text" inputmode="numeric" class="text-money" id="dealTotal" placeholder="0">
+</div>
+</div>
+<div class="deal-row full">
+<div class="deal-field">
+<label>Комментарий</label>
+<input type="text" id="dealComment" placeholder="Комментарий">
+</div>
+</div>
+<div class="deal-actions">
+<button class="btn btn-dark" onclick="closeDealModal()">Отмена</button>
+<button class="btn btn-green" onclick="confirmDeal()">Подтвердить</button>
+</div>
+</div>
+</div>
+
+<div class="modal" id="addPropertyModal">
+<div class="modal-content narrow" id="addPropertyModalContent" tabindex="0">
+<button class="modal-close" onclick="closeAddPropertyModal()">X</button>
+<h3 style="margin:0">Добавить имущество</h3>
+<input type="text" id="newPropertyName" placeholder="Название">
+<input type="text" id="newPropertyCategory" placeholder="Категория">
+<textarea id="newPropertyDescription" placeholder="Описание" rows="3"></textarea>
+<div class="property-photo-preview" id="newPropertyPhotoPreview">Нет фото</div>
+<button class="btn btn-green" style="width:100%" onclick="confirmAddProperty()">Добавить</button>
+</div>
+</div>
+
+<div class="modal" id="dealModal">
+<div class="modal-content deal-modal" id="dealModalContent" tabindex="0">
+<button class="modal-close" onclick="closeDealModal()">X</button>
+<h3 style="margin:0 0 12px">Новая сделка</h3>
+<div class="deal-templates">
+<button class="template-btn" onclick="applyDealTemplate(1)">1ч</button>
+<button class="template-btn" onclick="applyDealTemplate(2)">2ч</button>
+<button class="template-btn" onclick="applyDealTemplate(4)">4ч</button>
+<button class="template-btn" onclick="applyDealTemplate(6)">6ч</button>
+<button class="template-btn" onclick="applyDealTemplate(12)">12ч</button>
+<button class="template-btn" onclick="applyDealTemplate(24)">24ч</button>
+<button class="template-btn" onclick="applyDealTemplate(48)">48ч</button>
+<button class="template-btn" onclick="applyDealTemplate(99)">99ч</button>
+</div>
+<div class="deal-row">
+<div class="deal-field">
+<label>Начало</label>
+<input type="datetime-local" id="dealStart">
+</div>
+<div class="deal-field">
+<label>Конец</label>
+<input type="datetime-local" id="dealEnd">
+</div>
+</div>
+<div class="deal-row">
+<div class="deal-field">
+<label>Кол-во часов</label>
+<input type="number" id="dealHours" min="1" value="1">
+</div>
+<div class="deal-field">
+<label>Цена за час</label>
+<input type="text" inputmode="numeric" class="text-money" id="dealPricePerHour" placeholder="0">
+</div>
+<div class="deal-field">
+<label>Сумма</label>
+<input type="text" inputmode="numeric" class="text-money" id="dealTotal" placeholder="0">
+</div>
+</div>
+<div class="deal-row full">
+<div class="deal-field">
+<label>Комментарий</label>
+<input type="text" id="dealComment" placeholder="Комментарий">
+</div>
+</div>
+<div class="deal-actions">
+<button class="btn btn-dark" onclick="closeDealModal()">Отмена</button>
+<button class="btn btn-green" onclick="confirmDeal()">Подтвердить</button>
+</div>
+</div>
+</div>
+
+<div class="autocomplete-container" id="autocompleteContainer">
+<div class="autocomplete-list" id="autocompleteList"></div>
+</div>
+
+<script src="./renderer.js"></script>
+</body>
+</html>
+
+<button id="scrollToTopBtnRent" class="scroll-to-top-btn" onclick="scrollToTopRent()" title="Наверх">
+  ↑
+</button>
+
+<div class="modal" id="rentHistoryModal">
+  <div class="modal-content wide" id="rentHistoryModalContent" tabindex="0" style="border: 2px solid red;"></div>
+<div class="modal-content wide" id="rentHistoryModalContent" tabindex="0">
+<button class="modal-close" onclick="closeRentHistoryModal()">×</button>
+<h3 style="margin:0 0 12px">История аренды</h3>
+
+<!-- Таблица аренд (центр) -->
+<div class="operations-head" style="margin-bottom:8px">
+<div>Машина</div>
+<div>Начало</div>
+<div>Конец</div>
+<div>Сумма</div>
+<div></div>
+</div>
+<div class="operations-body" id="rentHistoryTable" style="min-height: 200px; background: #2a3040; padding: 10px;"></div>
+
+<!-- Нижняя панель: фильтры слева, сумма справа -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+<div class="filter-row">
+<button class="filter-chip active" data-filter="all" onclick="setRentHistoryFilter('all')">Все время</button>
+<button class="filter-chip" data-filter="today" onclick="setRentHistoryFilter('today')">Сегодня</button>
+<button class="filter-chip" data-filter="week" onclick="setRentHistoryFilter('week')">Неделя</button>
+<button class="filter-chip" data-filter="month" onclick="setRentHistoryFilter('month')">Месяц</button>
+<div class="dates-row" id="rentHistoryMonthControls" style="display:none;">
+<select id="rentHistoryMonthSelect" onchange="changeRentHistoryMonth()"></select>
+<select id="rentHistoryYearSelect" onchange="changeRentHistoryMonth()"></select>
+</div>
+</div>
+<div class="stat-mini"><strong>Всего заработано</strong><span id="rentHistoryTotal">0$</span></div>
+</div>
+</div>
+</div>
+
+<div class="modal" id="endRentalModal">
+<div class="modal-content narrow" id="endRentalModalContent" tabindex="0">
+<button class="modal-close" onclick="closeEndRentalModal()">×</button>
+<h3 style="margin:0 0 12px">Досрочное завершение аренды</h3>
+
+<!-- Список активных аренд -->
+<div id="activeRentalsList" style="max-height:300px;overflow-y:auto;margin-bottom:12px"></div>
+
+<!-- Детали выбранной аренды -->
+<div id="endRentalDetails" style="display:none;margin-bottom:12px">
+<div style="background:#1a1d24;padding:12px;border-radius:8px;margin-bottom:12px">
+<div style="margin-bottom:8px"><strong>Машина:</strong> <span id="endRentalCarName">-</span></div>
+<div style="margin-bottom:8px"><strong>Начало:</strong> <span id="endRentalStart">-</span></div>
+<div style="margin-bottom:8px"><strong>Плановый конец:</strong> <span id="endRentalEnd">-</span></div>
+<div style="margin-bottom:8px"><strong>Сумма:</strong> <span id="endRentalTotal">-</span></div>
+</div>
+<div class="deal-field">
+<label>Фактическое окончание</label>
+<input type="datetime-local" id="endRentalActualEnd">
+</div>
+</div>
+
+<div class="deal-actions">
+<button class="btn btn-dark" onclick="closeEndRentalModal()">Отмена</button>
+<button class="btn btn-green" id="confirmEndRentalBtn" onclick="confirmEndRental()" disabled>Завершить</button>
+</div>
+</div>
+</div>
+
+<div class="modal" id="successModal">
+<div class="modal-content narrow">
+<button class="modal-close" onclick="closeSuccessModal()">×</button>
+<div style="text-align:center;padding:20px 0">
+<div style="font-size:48px;margin-bottom:16px">✅</div>
+<h3 style="margin:0 0 8px">Успешно!</h3>
+<p id="successMessage" style="color:#888;margin:0 0 20px">Аренда завершена досрочно</p>
+<button class="btn btn-green" onclick="closeSuccessModal()" style="width:100%">OK</button>
+</div>
+</div>
+</div>
+
+</body>
+</html>

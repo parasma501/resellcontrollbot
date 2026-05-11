@@ -1,0 +1,57 @@
+{
+  "name": "resellcontrol",
+  "version": "2.0.0",
+  "description": "Resell Control App",
+  "main": "main.js",
+  "author": "Resell Control",
+  "license": "ISC",
+  "scripts": {
+    "start": "electron .",
+    "bot": "node bot/index.js",
+    "server": "node bot/combined-server.js",
+    "start:all": "concurrently \"npm start\" \"npm run bot\"",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.resellcontrol.app",
+    "productName": "Resell Control",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "renderer.js",
+      "main.js",
+      "package.json",
+      "bot/**/*",
+      "data/**/*",
+      "build/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "artifactName": "Resell-Control-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Resell Control",
+      "installerIcon": "build/installerIcon.ico",
+      "installerHeaderIcon": "build/installerIcon.ico",
+      "language": "1049"
+    }
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "node-telegram-bot-api": "^0.61.0"
+  },
+  "devDependencies": {
+    "electron": "^26.2.0",
+    "electron-builder": "^24.13.3"
+  }
+}
