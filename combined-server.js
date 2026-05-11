@@ -266,33 +266,6 @@ bot.onText(/\/addpayment/, (msg) => {
     bot.sendMessage(msg.chat.id, '✅ Платеж записан в историю!');
 });
 
-// Генерация ключа (только админ)
-bot.onText(/\/generatekey/, (msg) => {
-    if (msg.chat.id.toString() !== ADMIN_ID) {
-        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
-        return;
-    }
-    
-    const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    const keys = readKeys();
-    keys.push({
-        key: key,
-        used: false,
-        activatedBy: null,
-        expiryDate: null,
-        createdAt: new Date().toISOString()
-    });
-    writeKeys(keys);
-    
-    bot.sendMessage(msg.chat.id, `
-🔑 **Новый ключ активации:**
-
-\`${key}\`
-
-Скопируй и отправь пользователю!
-    `, { parse_mode: 'Markdown' });
-});
-
 // Активация ключа пользователем
 bot.onText(/\/activatekey/, (msg) => {
     const chatId = msg.chat.id;
