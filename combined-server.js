@@ -84,35 +84,43 @@ function writePayments(data) {
     }
 }
 
-function readKeys() {
-    try {
-        const filePath = path.join(DATA_DIR, 'keys.json');
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-    } catch (error) {
-        console.error('Ошибка чтения keys.json:', error);
-    }
-    return { keys: [] };
+function readKeys() { 
+  try { 
+    const filePath = path.join(DATA_DIR, 'keys.json'); 
+    if (fs.existsSync(filePath)) { 
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      // Проверяем, является ли прочитанный объект массивом
+      if (Array.isArray(data)) {
+        return data; 
+      } else if (data && Array.isArray(data.keys)) {
+        // Если структура из старой версии { "keys": [...] }
+        console.warn('⚠️ Обнаружена старая структура keys.json, исправляю...');
+        return data.keys;
+      } else {
+        console.warn('⚠️ keys.json имеет неверный формат, создаю новый массив');
+        return [];
+      }
+    } 
+  } catch (error) { 
+    console.error('❌ Ошибка чтения keys.json:', error); 
+  } 
+  return []; // Возвращаем пустой массив при любой ошибке
 }
 
-function writeKeys(data) {
-    try {
-        const filePath = path.join(DATA_DIR, 'keys.json');
-        
-        // Проверяем существование папки
-        const dirPath = path.dirname(filePath);
-        if (!fs.existsSync(dirPath)) {
-            console.log('📂 Создаю папку:', dirPath);
-            fs.mkdirSync(dirPath, { recursive: true });
-        }
-        
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-        console.log('📂 keys.json записан успешно!');
-    } catch (error) {
-        console.error('❌ Ошибка записи keys.json:', error);
-        throw error;  // ← Бросаем ошибку для обработки в try-catch!
-    }
+function writeKeys(keysArray) { 
+  try { 
+    const filePath = path.join(DATA_DIR, 'keys.json'); 
+    // Проверяем существование папки
+    const dirPath = path.dirname(filePath); 
+    if (!fs.existsSync(dirPath)) { 
+      console.log('📁 Создаю папку:', dirPath); 
+      fs.mkdirSync(dirPath, { recursive: true }); 
+    } 
+    fs.writeFileSync(filePath, JSON.stringify(keysArray, null, 2));
+    console.log('💾 Файл keys.json успешно сохранён');
+  } catch (error) { 
+    console.error('❌ Ошибка записи keys.json:', error); 
+  } 
 }
 
 // ======== КОМАНДЫ БОТА ========
