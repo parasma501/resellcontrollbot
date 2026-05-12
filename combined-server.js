@@ -28,10 +28,6 @@ const PAYMENT_LINK = process.env.PAYMENT_LINK || 'https://yoomoney.ru/to/4100119
 
 // ======== ИНИЦИАЛИЗАЦИЯ ========
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-const app = express();
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 console.log('🤖 Бот запущен!');
 console.log(`💳 Платежный сервер на порту ${PORT}`);
