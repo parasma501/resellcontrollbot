@@ -2966,7 +2966,7 @@ async function activateKey() {
     }
     
     try {
-        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
+        const response = await fetch('https://resellcontrollbot-production-194e.up.railway.app/checkkey', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key })
