@@ -352,10 +352,10 @@ bot.onText(/\/generatekey/, (msg) => {
         
         const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
         
-        const keysData = readKeys();  // { keys: [] }
-        console.log('📂 Прочитано ключей:', keysData.keys.length);
+        const keys = readKeys();  // Теперь это МАССИВ! []
+        console.log('📂 Прочитано ключей:', keys.length);
         
-        keysData.keys.push({  // ← ИСПРАВЛЕНИЕ!
+        keys.push({  // ← БЕЗ .keys!
             key: key,
             used: false,
             activatedBy: null,
@@ -363,7 +363,7 @@ bot.onText(/\/generatekey/, (msg) => {
             createdAt: new Date().toISOString()
         });
         
-        writeKeys(keysData);
+        writeKeys(keys);  // ← Передаём массив!
         
         bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
