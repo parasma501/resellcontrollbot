@@ -356,7 +356,8 @@ bot.onText(/\/generatekey/, (msg) => {
     console.log('📂 Читаю keys.json...');
     const keys = readKeys();
     console.log('📂 Прочитано ключей:', keys.keys.length);
-    
+
+    console.log('📂 Добавляю ключ в массив...'); 
     keys.push({
         key: key,
         used: false,
@@ -365,10 +366,21 @@ bot.onText(/\/generatekey/, (msg) => {
         createdAt: new Date().toISOString()
     });
     
+    keys.push({
+        key: key,
+        used: false,
+        activatedBy: null,
+        expiryDate: null,
+        createdAt: new Date().toISOString()
+    });
+
+    console.log('📂 Ключ добавлен в массив!');
+    
     console.log('📂 Записываю keys.json...');
     writeKeys(keys);
     console.log('📂 keys.json записан!');
-    
+
+    console.log('📤 Отправляю сообщение пользователю...');
     bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
 
