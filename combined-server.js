@@ -330,66 +330,67 @@ bot.onText(/\/activatekey/, (msg) => {
     `, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/generatekey/, (msg) => {
-    console.log('🔑 /generatekey вызван!');
-    console.log('User ID:', msg.chat.id);
-    console.log('User ID type:', typeof msg.chat.id);
-    console.log('Admin ID:', ADMIN_ID);
-    console.log('Admin ID type:', typeof ADMIN_ID);
-    
-    const userId = String(msg.chat.id);
-    const adminId = String(ADMIN_ID);
-    
-    console.log('Comparing:', userId, '===', adminId);
-    
-    if (userId !== adminId) {
-        console.log('❌ Не админ!');
-        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
-        return;
-    }
-    
-    console.log('✅ Админ подтверждён!');
-    
-    const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    console.log('🔑 Сгенерирован ключ:', key);
-    
-    console.log('📂 Читаю keys.json...');
-    const keys = readKeys();
-    console.log('📂 Прочитано ключей:', keys.keys.length);
-
-    console.log('📂 Добавляю ключ в массив...'); 
-    keys.push({
-        key: key,
-        used: false,
-        activatedBy: null,
-        expiryDate: null,
-        createdAt: new Date().toISOString()
-    });
-    
-    keys.push({
-        key: key,
-        used: false,
-        activatedBy: null,
-        expiryDate: null,
-        createdAt: new Date().toISOString()
-    });
-
-    console.log('📂 Ключ добавлен в массив!');
-    
-    console.log('📂 Записываю keys.json...');
-    writeKeys(keys);
-    console.log('📂 keys.json записан!');
-
-    console.log('📤 Отправляю сообщение пользователю...');
-    bot.sendMessage(msg.chat.id, `
+bot.onText(/\/generatekey/, async (msg) => {
+    try {
+        console.log('🔑 /generatekey вызван!');
+        console.log('User ID:', msg.chat.id);
+        console.log('User ID type:', typeof msg.chat.id);
+        console.log('Admin ID:', ADMIN_ID);
+        console.log('Admin ID type:', typeof ADMIN_ID);
+        
+        const userId = String(msg.chat.id);
+        const adminId = String(ADMIN_ID);
+        
+        console.log('Comparing:', userId, '===', adminId);
+        
+        if (userId !== adminId) {
+            console.log('❌ Не админ!');
+            await bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
+            return;
+        }
+        
+        console.log('✅ Админ подтверждён!');
+        
+        const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        console.log('🔑 Сгенерирован ключ:', key);
+        
+        console.log('📂 Читаю keys.json...');
+        const keys = readKeys();
+        console.log('📂 Прочитано ключей:', keys.keys.length);
+        
+        console.log('📂 Добавляю ключ в массив...');
+        keys.push({
+            key: key,
+            used: false,
+            activatedBy: null,
+            expiryDate: null,
+            createdAt: new Date().toISOString()
+        });
+        console.log('📂 Ключ добавлен в массив!');
+        
+        console.log('📂 Записываю keys.json...');
+        writeKeys(keys);
+        console.log('📂 keys.json записан!');
+        
+        console.log('📤 Отправляю сообщение пользователю...');
+        await bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
 
 \`${key}\`
 
 Скопируй и отправь пользователю!
-    `, { parse_mode: 'Markdown' });
-    
-    console.log('✅ Ключ отправлен!');
+        `, { parse_mode: 'Markdown' });
+        
+        console.log('✅ Ключ отправлен!');
+        
+    } catch (error) {
+        console.error('❌ Ошибка в /generatekey:', error);
+        try {
+            await bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+        } catch (sendError) {
+            console.error('Не удалось отправить сообщение об ошибке:', sendError);
+        }
+    }
 });
 
 // Проверка ключа (для Electron приложения)
