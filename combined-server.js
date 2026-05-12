@@ -3,6 +3,22 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+const app = express();
+
+// Добавь CORS middleware!
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // ======== КОНФИГУРАЦИЯ ========
 const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = process.env.ADMIN_ID || '705565283';
