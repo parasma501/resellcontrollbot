@@ -99,21 +99,20 @@ function readKeys() {
 function writeKeys(data) {
     try {
         const filePath = path.join(DATA_DIR, 'keys.json');
+        
+        // Проверяем существование папки
+        const dirPath = path.dirname(filePath);
+        if (!fs.existsSync(dirPath)) {
+            console.log('📂 Создаю папку:', dirPath);
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+        
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        console.log('📂 keys.json записан успешно!');
     } catch (error) {
-        console.error('Ошибка записи keys.json:', error);
+        console.error('❌ Ошибка записи keys.json:', error);
+        throw error;  // ← Бросаем ошибку для обработки в try-catch!
     }
-}
-
-function formatDateTime(timestamp) {
-    const date = new Date(timestamp);
-    return date.toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
 }
 
 // ======== КОМАНДЫ БОТА ========
