@@ -297,8 +297,8 @@ bot.onText(/\/activatekey/, (msg) => {
         return;
     }
     
-    const keys = readKeys();
-    const found = keys.find(k => k.key === key);
+    const keysData = readKeys();  // { keys: [] }
+    const found = keysData.keys.find(k => k.key === key);  // ← ИСПРАВЛЕНИЕ!
     
     if (!found) {
         bot.sendMessage(chatId, '❌ Неверный ключ!');
@@ -310,13 +310,12 @@ bot.onText(/\/activatekey/, (msg) => {
         return;
     }
     
-    // Активируем ключ
     found.used = true;
     found.activatedBy = chatId;
     found.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    writeKeys(keys);
     
-    // Обновляем подписку пользователя
+    writeKeys(keysData);
+    
     const subscription = readSubscription();
     subscription.isActive = true;
     subscription.expiryDate = found.expiryDate;
@@ -333,45 +332,31 @@ bot.onText(/\/generatekey/, (msg) => {
     try {
         console.log('🔑 /generatekey вызван!');
         console.log('User ID:', msg.chat.id);
-        console.log('User ID type:', typeof msg.chat.id);
         console.log('Admin ID:', ADMIN_ID);
-        console.log('Admin ID type:', typeof ADMIN_ID);
         
         const userId = String(msg.chat.id);
         const adminId = String(ADMIN_ID);
         
-        console.log('Comparing:', userId, '===', adminId);
-        
         if (userId !== adminId) {
-            console.log('❌ Не админ!');
             bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
             return;
         }
         
-        console.log('✅ Админ подтверждён!');
-        
         const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-        console.log('🔑 Сгенерирован ключ:', key);
         
-        console.log('📂 Читаю keys.json...');
-        const keys = readKeys();
-        console.log('📂 Прочитано ключей:', keys.keys.length);
+        const keysData = readKeys();  // { keys: [] }
+        console.log('📂 Прочитано ключей:', keysData.keys.length);
         
-        console.log('📂 Добавляю ключ в массив...');
-        keys.push({
+        keysData.keys.push({  // ← ИСПРАВЛЕНИЕ!
             key: key,
             used: false,
             activatedBy: null,
             expiryDate: null,
             createdAt: new Date().toISOString()
         });
-        console.log('📂 Ключ добавлен в массив!');
         
-        console.log('📂 Записываю keys.json...');
-        writeKeys(keys);
-        console.log('📂 keys.json записан!');
+        writeKeys(keysData);
         
-        console.log('📤 Отправляю сообщение пользователю...');
         bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
 
@@ -380,15 +365,9 @@ bot.onText(/\/generatekey/, (msg) => {
 Скопируй и отправь пользователю!
         `, { parse_mode: 'Markdown' });
         
-        console.log('✅ Ключ отправлен!');
-        
     } catch (error) {
         console.error('❌ Ошибка в /generatekey:', error);
-        try {
-            bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
-        } catch (sendError) {
-            console.error('Не удалось отправить сообщение об ошибке:', sendError);
-        }
+        bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
     }
 });
 
@@ -396,8 +375,8 @@ bot.onText(/\/generatekey/, (msg) => {
 app.post('/checkkey', (req, res) => {
     const { key } = req.body;
     
-    const keys = readKeys();
-    const found = keys.find(k => k.key === key);
+    const keysData = readKeys();  // { keys: [] }
+    const found = keysData.keys.find(k => k.key === key);  // ← ИСПРАВЛЕНИЕ!
     
     if (!found || !found.used || !found.expiryDate) {
         return res.json({ valid: false, message: 'Неверный ключ' });
