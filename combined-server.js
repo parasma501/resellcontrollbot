@@ -428,6 +428,17 @@ app.post('/checkkey', (req, res) => {
     }
 });
 
+bot.onText(/\/showallkeys/, (msg) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const keys = readKeys(); // должен вернуть массив
+    if (!keys.length) {
+        bot.sendMessage(msg.chat.id, '📭 Ключей нет');
+        return;
+    }
+    const list = keys.map(k => `${k.key} — used: ${k.used}${k.expiryDate ? `, истекает: ${new Date(k.expiryDate).toLocaleString()}` : ''}`).join('\n');
+    bot.sendMessage(msg.chat.id, `📋 Список ключей:\n${list}`);
+});
+
 // ======== ПРОВЕРКА АРЕНД ========
 function checkRentalsAndNotify() {
     const data = readRentData();
