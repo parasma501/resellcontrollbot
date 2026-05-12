@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // ======== КОНФИГУРАЦИЯ ========
-const BOT_TOKEN = process.env.BOT_TOKEN || '8601564949:AAHcdt-buu5sv8kSTj1kyz5yh21IIWj01a8';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = process.env.ADMIN_ID || '705565283';
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/data';
