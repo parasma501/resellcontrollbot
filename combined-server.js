@@ -345,6 +345,8 @@ bot.onText(/\/generatekey/, (msg) => {
 
             const expiry = new Date(subscription.expiryDate);
 
+    console.log('User ID type:', typeof msg.chat.id)
+
     
     const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
     console.log('🔑 Сгенерирован ключ:', key);
