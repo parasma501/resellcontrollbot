@@ -397,27 +397,39 @@ bot.onText(/\/generatekey/, (msg) => {
 
 // Проверка ключа (для Electron приложения)
 app.post('/checkkey', (req, res) => {
-    const { key } = req.body;
-    
-    const keysData = readKeys();  // { keys: [] }
-    const found = keysData.keys.find(k => k.key === key);  // ← ИСПРАВЛЕНИЕ!
-    
-    if (!found || !found.used || !found.expiryDate) {
-        return res.json({ valid: false, message: 'Неверный ключ' });
+    try {
+        const { key } = req.body;
+        
+        if (!key) {
+            return res.json({ valid: false, message: 'Ключ не указан' });
+        }
+        
+        const keys = readKeys();  // Массив!
+        const found = keys.find(k => k.key === key);
+        
+        if (!found || !found.used || !found.expiryDate) {
+            return res.json({ valid: false, message: 'Неверный ключ' });
+        }
+        
+        const now = new Date();
+        const expiry = new Date(found.expiryDate);
+        
+        if (now > expiry) {
+            return res.json({ valid: false, message: 'Ключ истёк' });
+        }
+        
+        console.log('✅ Ключ валиден:', key);
+        
+        res.json({ 
+            valid: true, 
+            expiryDate: found.expiryDate,
+            activatedBy: found.activatedBy
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка в /checkkey:', error);
+        res.status(500).json({ valid: false, message: 'Ошибка сервера' });
     }
-    
-    const now = new Date();
-    const expiry = new Date(found.expiryDate);
-    
-    if (now > expiry) {
-        return res.json({ valid: false, message: 'Ключ истёк' });
-    }
-    
-    res.json({ 
-        valid: true, 
-        expiryDate: found.expiryDate,
-        activatedBy: found.activatedBy
-    });
 });
 
 // ======== ПРОВЕРКА АРЕНД ========
