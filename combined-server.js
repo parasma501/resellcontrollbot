@@ -330,30 +330,33 @@ bot.onText(/\/activatekey/, (msg) => {
     `, { parse_mode: 'Markdown' });
 });
 
-// Генерация ключа (только админ)
 bot.onText(/\/generatekey/, (msg) => {
     console.log('🔑 /generatekey вызван!');
-
     console.log('User ID:', msg.chat.id);
+    console.log('User ID type:', typeof msg.chat.id);
     console.log('Admin ID:', ADMIN_ID);
-
+    console.log('Admin ID type:', typeof ADMIN_ID);
     
-    if (msg.chat.id.toString() !== ADMIN_ID) {
+    const userId = String(msg.chat.id);
+    const adminId = String(ADMIN_ID);
+    
+    console.log('Comparing:', userId, '===', adminId);
+    
+    if (userId !== adminId) {
+        console.log('❌ Не админ!');
         bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
         return;
     }
-
-            const expiry = new Date(subscription.expiryDate);
-
-    console.log('User ID type:', typeof msg.chat.id)
-
+    
+    console.log('✅ Админ подтверждён!');
     
     const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
     console.log('🔑 Сгенерирован ключ:', key);
-
+    
     console.log('📂 Читаю keys.json...');
     const keys = readKeys();
     console.log('📂 Прочитано ключей:', keys.keys.length);
+    
     keys.push({
         key: key,
         used: false,
@@ -361,7 +364,8 @@ bot.onText(/\/generatekey/, (msg) => {
         expiryDate: null,
         createdAt: new Date().toISOString()
     });
-     console.log('📂 Записываю keys.json...');
+    
+    console.log('📂 Записываю keys.json...');
     writeKeys(keys);
     console.log('📂 keys.json записан!');
     
@@ -372,6 +376,7 @@ bot.onText(/\/generatekey/, (msg) => {
 
 Скопируй и отправь пользователю!
     `, { parse_mode: 'Markdown' });
+    
     console.log('✅ Ключ отправлен!');
 });
 
