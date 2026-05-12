@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // ======== КОНФИГУРАЦИЯ ========
-const BOT_TOKEN = '8601564949:AAHcdt-buu5sv8kSTj1kyz5yh21IIWj01a8';
+const BOT_TOKEN = '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = '705565283';
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const RENT_DATA_FILE = path.join(DATA_DIR, 'rent-data.json');
