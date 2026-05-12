@@ -330,7 +330,7 @@ bot.onText(/\/activatekey/, (msg) => {
     `, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/generatekey/, async (msg) => {
+bot.onText(/\/generatekey/, (msg) => {
     try {
         console.log('🔑 /generatekey вызван!');
         console.log('User ID:', msg.chat.id);
@@ -345,7 +345,7 @@ bot.onText(/\/generatekey/, async (msg) => {
         
         if (userId !== adminId) {
             console.log('❌ Не админ!');
-            await bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
+            bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
             return;
         }
         
@@ -373,7 +373,7 @@ bot.onText(/\/generatekey/, async (msg) => {
         console.log('📂 keys.json записан!');
         
         console.log('📤 Отправляю сообщение пользователю...');
-        await bot.sendMessage(msg.chat.id, `
+        bot.sendMessage(msg.chat.id, `
 🔑 **Новый ключ активации:**
 
 \`${key}\`
@@ -386,7 +386,7 @@ bot.onText(/\/generatekey/, async (msg) => {
     } catch (error) {
         console.error('❌ Ошибка в /generatekey:', error);
         try {
-            await bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+            bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
         } catch (sendError) {
             console.error('Не удалось отправить сообщение об ошибке:', sendError);
         }
