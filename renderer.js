@@ -2957,11 +2957,9 @@ function hideActivationModal() {
 
 // Функция активации (пример)
 async function activateKey() {
-    // Исправлено: правильный ID поля ввода
-    const keyInput = document.getElementById('activationKeyInput');
+    const keyInput = document.getElementById('activationKeyInput'); // правильный ID
     if (!keyInput) {
-        console.error('Поле ввода не найдено');
-        alert('Ошибка интерфейса');
+        alert('Поле ввода не найдено');
         return;
     }
     const key = keyInput.value.trim();
@@ -2979,7 +2977,7 @@ async function activateKey() {
             localStorage.setItem('subscription_expiry', data.expiryDate);
             localStorage.setItem('subscription_key', key);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
-            // Скрываем модальное окно (исправлен ID)
+            // Скрываем модальное окно
             const modal = document.getElementById('activationModal');
             if (modal) modal.style.display = 'none';
         } else {
@@ -3007,23 +3005,23 @@ window.addEventListener('DOMContentLoaded', () => {
 // Проверка при запуске
 window.addEventListener('DOMContentLoaded', () => {
     const expiry = localStorage.getItem('subscription_expiry');
+    const modal = document.getElementById('activationModal');
+    if (!modal) return;
     if (expiry && new Date(expiry) > new Date()) {
-        // Подписка активна
-        document.getElementById('activationForm').style.display = 'none';
+        modal.style.display = 'none';
     } else {
-        // Подписка истекла или отсутствует
-        document.getElementById('activationForm').style.display = 'block';
+        modal.style.display = 'flex';
     }
 });
 
 function checkExistingSubscription() {
     const expiry = localStorage.getItem('subscription_expiry');
+    const modal = document.getElementById('activationModal');
+    if (!modal) return;
     if (expiry && new Date(expiry) > new Date()) {
-        // Подписка активна, не показываем форму активации
-        document.getElementById('activationForm').style.display = 'none';
+        modal.style.display = 'none';
     } else {
-        // Подписка истекла или отсутствует, показываем форму
-        document.getElementById('activationForm').style.display = 'block';
+        modal.style.display = 'flex';
     }
 }
 checkExistingSubscription();
