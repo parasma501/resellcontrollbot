@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = process.env.ADMIN_ID || '705565283';
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || '/opt/render/project/data';
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const PAYMENT_LINK = process.env.PAYMENT_LINK || 'https://yoomoney.ru/to/4100119530608840';
 
 // ======== ИНИЦИАЛИЗАЦИЯ ========
