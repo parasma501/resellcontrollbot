@@ -2957,7 +2957,13 @@ function hideActivationModal() {
 
 // Функция активации (пример)
 async function activateKey() {
-    const keyInput = document.getElementById('keyInput');
+    // Исправлено: правильный ID поля ввода
+    const keyInput = document.getElementById('activationKeyInput');
+    if (!keyInput) {
+        console.error('Поле ввода не найдено');
+        alert('Ошибка интерфейса');
+        return;
+    }
     const key = keyInput.value.trim();
     if (!key) return alert('Введите ключ');
 
@@ -2970,19 +2976,33 @@ async function activateKey() {
         const data = await response.json();
 
         if (data.valid) {
-            // Сохраняем дату окончания
             localStorage.setItem('subscription_expiry', data.expiryDate);
             localStorage.setItem('subscription_key', key);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
-            // Скрыть форму активации
-            document.getElementById('activationForm').style.display = 'none';
+            // Скрываем модальное окно (исправлен ID)
+            const modal = document.getElementById('activationModal');
+            if (modal) modal.style.display = 'none';
         } else {
-            alert('Ошибка: ' + data.message);
+            alert('Ошибка: ' + (data.message || 'Неверный ключ'));
         }
     } catch (err) {
+        console.error(err);
         alert('Ошибка соединения с сервером');
     }
 }
+
+// Проверка при загрузке страницы (исправлен ID модального окна)
+window.addEventListener('DOMContentLoaded', () => {
+    const expiry = localStorage.getItem('subscription_expiry');
+    const modal = document.getElementById('activationModal');
+    if (!modal) return;
+    
+    if (expiry && new Date(expiry) > new Date()) {
+        modal.style.display = 'none'; // подписка активна, скрываем
+    } else {
+        modal.style.display = 'flex'; // показываем модалку
+    }
+});
 
 // Проверка при запуске
 window.addEventListener('DOMContentLoaded', () => {
