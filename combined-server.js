@@ -96,43 +96,37 @@ function writePayments(data) {
     }
 }
 
-function readKeys() { 
-  try { 
-    const filePath = path.join(DATA_DIR, 'keys.json'); 
-    if (fs.existsSync(filePath)) { 
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      // Проверяем, является ли прочитанный объект массивом
-      if (Array.isArray(data)) {
-        return data; 
-      } else if (data && Array.isArray(data.keys)) {
-        // Если структура из старой версии { "keys": [...] }
-        console.warn('⚠️ Обнаружена старая структура keys.json, исправляю...');
-        return data.keys;
-      } else {
-        console.warn('⚠️ keys.json имеет неверный формат, создаю новый массив');
-        return [];
-      }
-    } 
-  } catch (error) { 
-    console.error('❌ Ошибка чтения keys.json:', error); 
-  } 
-  return []; // Возвращаем пустой массив при любой ошибке
+function readKeys() {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        if (fs.existsSync(filePath)) {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            // Если это объект с полем keys (старый формат) – извлекаем массив
+            if (data && !Array.isArray(data) && Array.isArray(data.keys)) {
+                console.log('🔄 Конвертация старого формата keys.json');
+                return data.keys;
+            }
+            // Если это уже массив – возвращаем его
+            if (Array.isArray(data)) return data;
+        }
+    } catch (error) {
+        console.error('❌ Ошибка чтения keys.json:', error);
+    }
+    return []; // всегда возвращаем массив
 }
 
-function writeKeys(keysArray) { 
-  try { 
-    const filePath = path.join(DATA_DIR, 'keys.json'); 
-    // Проверяем существование папки
-    const dirPath = path.dirname(filePath); 
-    if (!fs.existsSync(dirPath)) { 
-      console.log('📁 Создаю папку:', dirPath); 
-      fs.mkdirSync(dirPath, { recursive: true }); 
-    } 
-    fs.writeFileSync(filePath, JSON.stringify(keysArray, null, 2));
-    console.log('💾 Файл keys.json успешно сохранён');
-  } catch (error) { 
-    console.error('❌ Ошибка записи keys.json:', error); 
-  } 
+function writeKeys(keysArray) {
+    try {
+        const filePath = path.join(DATA_DIR, 'keys.json');
+        if (!Array.isArray(keysArray)) {
+            console.error('❌ writeKeys: передан не массив', keysArray);
+            return;
+        }
+        fs.writeFileSync(filePath, JSON.stringify(keysArray, null, 2));
+        console.log(`💾 Сохранено ${keysArray.length} ключей`);
+    } catch (error) {
+        console.error('❌ Ошибка записи keys.json:', error);
+    }
 }
 
 // ======== КОМАНДЫ БОТА ========
@@ -350,55 +344,33 @@ bot.onText(/\/activatekey/, (msg) => {
 
 bot.onText(/\/generatekey/, (msg) => {
     try {
-        console.log('🔑 /generatekey вызван!');
-        console.log('User ID:', msg.chat.id);
-        console.log('Admin ID:', ADMIN_ID);
-        
-        const userId = String(msg.chat.id);
-        const adminId = String(ADMIN_ID);
-        
-        if (userId !== adminId) {
+        if (String(msg.chat.id) !== String(ADMIN_ID)) {
             bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
             return;
         }
-        
         const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-        
-        const keys = readKeys();  // Теперь это МАССИВ! []
-        console.log('📂 Прочитано ключей:', keys.length);
-        
-        keys.push({  // ← БЕЗ .keys!
+        const keys = readKeys(); // массив
+        keys.push({
             key: key,
             used: false,
             activatedBy: null,
             expiryDate: null,
             createdAt: new Date().toISOString()
         });
-        
-        writeKeys(keys);  // ← Передаём массив!
-        
-        bot.sendMessage(msg.chat.id, `
-🔑 **Новый ключ активации:**
-
-\`${key}\`
-
-Скопируй и отправь пользователю!
-        `, { parse_mode: 'Markdown' });
-        
+        writeKeys(keys);
+        bot.sendMessage(msg.chat.id, `✅ Новый ключ: \`${key}\``, { parse_mode: 'Markdown' });
     } catch (error) {
-        console.error('❌ Ошибка в /generatekey:', error);
-        bot.sendMessage(msg.chat.id, `❌ Ошибка: ${error.message}`);
+        console.error(error);
+        bot.sendMessage(msg.chat.id, '❌ Ошибка при генерации ключа');
     }
 });
 
 // Проверка ключа (для Electron приложения)
 app.post('/checkkey', (req, res) => {
     const { key } = req.body;
-    console.log('🔍 /checkkey получил ключ:', key);
+    console.log('🔍 /checkkey получен ключ:', key);
     
-    const keys = readKeys(); // теперь массив
-    console.log(`📂 Всего ключей: ${keys.length}`);
-    
+    const keys = readKeys(); // массив
     const found = keys.find(k => k.key === key);
     
     if (!found) {
@@ -406,27 +378,29 @@ app.post('/checkkey', (req, res) => {
         return res.json({ valid: false, message: 'Неверный ключ' });
     }
     
-    if (found.used) {
-        console.log('❌ Ключ уже использован');
+    // Если ключ уже использован
+    if (found.used === true) {
+        console.log('❌ Ключ уже активирован');
         return res.json({ valid: false, message: 'Ключ уже активирован' });
     }
     
-    const now = new Date();
-    const expiry = found.expiryDate ? new Date(found.expiryDate) : null;
-    if (expiry && now > expiry) {
+    // Проверка срока действия (если указан)
+    let expiryDate = found.expiryDate ? new Date(found.expiryDate) : null;
+    if (expiryDate && new Date() > expiryDate) {
         console.log('❌ Ключ истёк');
         return res.json({ valid: false, message: 'Ключ истёк' });
     }
     
-    // Если дошли сюда — ключ валиден. Можно пометить used = true (если нужно)
-    // found.used = true;
-    // writeKeys(keys);
+    // Если ключ валиден: помечаем как использованный и сохраняем
+    found.used = true;
+    found.activatedBy = req.body.userId || 'electron-client';
+    writeKeys(keys);
     
-    console.log('✅ Ключ валиден');
+    console.log('✅ Ключ активирован, срок до:', found.expiryDate);
     res.json({
         valid: true,
-        expiryDate: found.expiryDate,
-        activatedBy: found.activatedBy
+        expiryDate: found.expiryDate, // например, "2025-06-12T10:00:00.000Z"
+        message: 'Подписка активирована'
     });
 });
 
