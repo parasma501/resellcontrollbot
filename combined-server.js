@@ -165,6 +165,7 @@ bot.onText(/\/help/, (msg) => {
 /rentals - Активные аренды
 /payments - История платежей
 /activatekey КЛЮЧ - Активация ключа
+/clue - Порядок действий при оплате
 
 🔧 **Админ-команды:**
 /generatekey - Создать ключ
@@ -419,7 +420,7 @@ bot.onText(/\/showallkeys/, (msg) => {
     bot.sendMessage(msg.chat.id, `📋 Список ключей:\n${list}`);
 });
 
-bot.onText(/\/buy/, (msg) => {
+bot.onText(/\/clue/, (msg) => {
     const chatId = msg.chat.id;
     const discordLink = 'https://discord.gg/EfndfUnApv'; // ваша ссылка-приглашение
     const paymentLink = 'https://yoomoney.ru/to/4100119530608840'; // ваша ссылка на оплату
@@ -429,7 +430,7 @@ bot.onText(/\/buy/, (msg) => {
         `1. Оплатите подписку по ссылке: ${paymentLink}\n` +
         `2. После оплаты напишите **мне в Discord**: ${discordLink}\n` +
         `3. Я проверю оплату и выдам вам ключ.\n\n` +
-        `Сумма: 150 руб. Срок: 1 месяц.`,
+        `Сумма: 500 руб. Срок: 1 месяц.`,
         { parse_mode: 'Markdown' }
     );
 });
