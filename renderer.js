@@ -6,6 +6,7 @@ const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update/main/version.json';
 const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update';
 const CURRENT_VERSION = pkg.version;
+const API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
 
 let updateInfo = null;
 let isAppFocused = true;
@@ -2913,24 +2914,25 @@ document.addEventListener('click', (e) => {
 // Проверка подписки при запуске
 async function checkSubscription() {
     try {
-        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
+        const key = localStorage.getItem('subscription_key') || '';
+        if (!key) {
+            showActivationModal();
+            return;
+        }
+        const response = await fetch(`${API_BASE}/checkkey`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: localStorage.getItem('activationKey') || '' })
+            body: JSON.stringify({ key })
         });
-        
         const result = await response.json();
-        
         if (result.valid) {
-            // Подписка активна
-            localStorage.setItem('subscription', JSON.stringify({
-                isActive: true,
-                expiryDate: result.expiryDate
-            }));
+            // Обновим срок действия, если сервер вернул новую дату
+            localStorage.setItem('subscription_expiry', result.expiryDate);
             hideActivationModal();
         } else {
-            // Подписка истекла или нет ключа
-            localStorage.removeItem('activationKey');
+            // Ключ невалиден или истёк
+            localStorage.removeItem('subscription_key');
+            localStorage.removeItem('subscription_expiry');
             showActivationModal();
         }
     } catch (error) {
@@ -2957,7 +2959,7 @@ function hideActivationModal() {
 
 // Функция активации (пример)
 async function activateKey() {
-    const keyInput = document.getElementById('activationKeyInput'); // правильный ID
+    const keyInput = document.getElementById('activationKeyInput');
     if (!keyInput) {
         alert('Поле ввода не найдено');
         return;
@@ -2966,7 +2968,7 @@ async function activateKey() {
     if (!key) return alert('Введите ключ');
 
     try {
-        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
+        const response = await fetch(`${API_BASE}/checkkey`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key })
@@ -2977,7 +2979,6 @@ async function activateKey() {
             localStorage.setItem('subscription_expiry', data.expiryDate);
             localStorage.setItem('subscription_key', key);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
-            // Скрываем модальное окно
             const modal = document.getElementById('activationModal');
             if (modal) modal.style.display = 'none';
         } else {
