@@ -2955,38 +2955,66 @@ function hideActivationModal() {
     }
 }
 
-// Активировать ключ
+// Функция активации (пример)
 async function activateKey() {
-    const keyInput = document.getElementById('activationKeyInput');
-    const key = keyInput ? keyInput.value.trim() : '';
-    
-    if (!key) {
-        alert('Введите ключ!');
-        return;
-    }
-    
+    const keyInput = document.getElementById('keyInput');
+    const key = keyInput.value.trim();
+    if (!key) return alert('Введите ключ');
+
     try {
-        const response = await fetch('https://resellcontrollbot-production-194e.up.railway.app/checkkey', {
+        const response = await fetch('https://resellcontrollbot-production.up.railway.app/checkkey', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key })
         });
-        
-        const result = await response.json();
-        
-        if (result.valid) {
-            localStorage.setItem('activationKey', key);
-            localStorage.setItem('subscription', JSON.stringify({
-                isActive: true,
-                expiryDate: result.expiryDate
-            }));
-            hideActivationModal();
-            alert('✅ Ключ активирован!');
+        const data = await response.json();
+
+        if (data.valid) {
+            // Сохраняем дату окончания
+            localStorage.setItem('subscription_expiry', data.expiryDate);
+            localStorage.setItem('subscription_key', key);
+            alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
+            // Скрыть форму активации
+            document.getElementById('activationForm').style.display = 'none';
         } else {
-            alert('❌ ' + result.message);
+            alert('Ошибка: ' + data.message);
         }
-    } catch (error) {
-        console.error('Ошибка активации:', error);
-        alert('Ошибка подключения к серверу');
+    } catch (err) {
+        alert('Ошибка соединения с сервером');
+    }
+}
+
+// Проверка при запуске
+window.addEventListener('DOMContentLoaded', () => {
+    const expiry = localStorage.getItem('subscription_expiry');
+    if (expiry && new Date(expiry) > new Date()) {
+        // Подписка активна
+        document.getElementById('activationForm').style.display = 'none';
+    } else {
+        // Подписка истекла или отсутствует
+        document.getElementById('activationForm').style.display = 'block';
+    }
+});
+
+function checkExistingSubscription() {
+    const expiry = localStorage.getItem('subscription_expiry');
+    if (expiry && new Date(expiry) > new Date()) {
+        // Подписка активна, не показываем форму активации
+        document.getElementById('activationForm').style.display = 'none';
+    } else {
+        // Подписка истекла или отсутствует, показываем форму
+        document.getElementById('activationForm').style.display = 'block';
+    }
+}
+checkExistingSubscription();
+
+function checkLocalSubscription() {
+    const expiry = localStorage.getItem('subscription_expiry');
+    if (expiry && new Date(expiry) > new Date()) {
+        // Подписка активна
+        document.getElementById('activateForm').style.display = 'none';
+    } else {
+        // Подписка истекла или отсутствует
+        document.getElementById('activateForm').style.display = 'block';
     }
 }
