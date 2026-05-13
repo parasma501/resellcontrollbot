@@ -566,6 +566,11 @@ app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
+// ==================== ТЕСТОВЫЙ МАРШРУТ ====================
+app.get('/ping', (req, res) => {
+    res.send('pong');
+});
+
 // ======== ЗАПУСК ========
 app.listen(PORT, () => {
     console.log(`💳 Payment server running on port ${PORT}`);
