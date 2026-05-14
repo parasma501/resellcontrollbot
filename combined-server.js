@@ -385,10 +385,15 @@ app.post('/checkkey', (req, res) => {
         return res.json({ valid: false, message: 'Неверный ключ' });
     }
     
-    // Если ключ уже использован
+    // Если ключ уже использован, проверим срок
     if (found.used === true) {
-        console.log('❌ Ключ уже активирован');
-        return res.json({ valid: false, message: 'Ключ уже активирован' });
+        if (found.expiryDate && new Date(found.expiryDate) > new Date()) {
+            console.log('✅ Подписка активна (ключ уже активирован)');
+            return res.json({ valid: true, expiryDate: found.expiryDate });
+        } else {
+            console.log('❌ Срок подписки истёк');
+            return res.json({ valid: false, message: 'Срок подписки истёк' });
+        }
     }
     
     // Проверка срока действия (если указан)
@@ -398,15 +403,15 @@ app.post('/checkkey', (req, res) => {
         return res.json({ valid: false, message: 'Ключ истёк' });
     }
     
-    // Если ключ валиден: помечаем как использованный и сохраняем
+    // Первая активация ключа
     found.used = true;
     found.activatedBy = req.body.userId || 'electron-client';
     writeKeys(keys);
     
-    console.log('✅ Ключ активирован, срок до:', found.expiryDate);
+    console.log('✅ Ключ активирован впервые, срок до:', found.expiryDate);
     res.json({
         valid: true,
-        expiryDate: found.expiryDate, // например, "2025-06-12T10:00:00.000Z"
+        expiryDate: found.expiryDate,
         message: 'Подписка активирована'
     });
 });
