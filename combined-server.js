@@ -355,11 +355,13 @@ bot.onText(/\/generatekey/, (msg) => {
         }
         const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
         const keys = readKeys(); // массив
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30); // +30 дней от сегодня
         keys.push({
             key: key,
             used: false,
             activatedBy: null,
-            expiryDate: null,
+            expiryDate: expiryDate.toISOString(),
             createdAt: new Date().toISOString()
         });
         writeKeys(keys);
