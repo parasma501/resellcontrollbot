@@ -3,16 +3,17 @@ const { ipcRenderer } = require('electron');
 const pkg = require('./package.json');
 
 const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
-const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update/main/version.json';
-const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update';
+const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
+const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update-pro/releases';
 const CURRENT_VERSION = pkg.version;
 const API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
+const fs = require('fs');
+const path = require('path');
 
 let updateInfo = null;
 let isAppFocused = true;
 let properties = [];
 let currentProperty = null;
-let rentOperations = [];
 let rentOperationFilter = localStorage.getItem('rentOperationFilter') || 'all';
 let selectedRentMonth = new Date().getMonth();
 let selectedRentYear = new Date().getFullYear();
@@ -21,9 +22,26 @@ let currentDealPhoto = null;
 let focusedPhotoArea = null;
 let rentShowAllMode = false;
 let endRentalSelectedId = null;
+let myBpValue = 0;
+let bpHistoryEnabled = true;
+let selectedSound = 'default'; // 'default', 'beep1', 'beep2', 'custom'
+let customSoundUrl = null;
+let audioUnlocked = false;
+let globalAudioCtx = null;
+let currentAudio = null;
+let currentBeepTimeouts = [];
+let isBeepSequenceActive = false;
 
-let rentHistoryPropertyFilter = null;
+// История аренды
+let rentOperations = [];
+const savedRentOps = localStorage.getItem('rentOperations');
+if (savedRentOps) rentOperations = JSON.parse(savedRentOps);
+else rentOperations = [];
+
 let rentHistoryFilter = localStorage.getItem('rentHistoryFilter') || 'all';
+let rentHistorySelectedMonth = new Date().getMonth();
+let rentHistorySelectedYear = new Date().getFullYear();
+let rentHistoryPropertyFilter = null;
 let selectedRentHistoryMonth = new Date().getMonth();
 let selectedRentHistoryYear = new Date().getFullYear();
 
@@ -38,7 +56,6 @@ let currentSellItem = null;
 let pendingDeleteItemId = null;
 let pendingDeletePropertyId = null;
 let bpMode = localStorage.getItem('bpMode') || 'base';
-
 function normalizeVersion(version){
   return String(version || '0.0.0').trim().replace(/^v/i, '');
 }
@@ -650,7 +667,9 @@ document.addEventListener('paste', (e) => {
 });
 
 function saveProperties(){ localStorage.setItem('rentProperties', JSON.stringify(properties)); }
-function saveRentOperations(){ localStorage.setItem('rentOperations', JSON.stringify(rentOperations)); }
+function saveRentOperations() {
+    localStorage.setItem('rentOperations', JSON.stringify(rentOperations));
+}
 function loadRentData(){
     try{ properties = JSON.parse(localStorage.getItem('rentProperties')||'[]') || []; }catch(e){ properties=[]; }
     try{ rentOperations = JSON.parse(localStorage.getItem('rentOperations')||'[]') || []; }catch(e){ rentOperations=[]; }
@@ -840,6 +859,260 @@ function initDealModal(){
   document.getElementById('dealTotal').value = '';
   document.getElementById('dealComment').value = '';
 }
+function loadMyBpValue() {
+  const saved = localStorage.getItem('myBpValue');
+  if (saved !== null && !isNaN(parseInt(saved, 10))) {
+    myBpValue = parseInt(saved, 10);
+  } else {
+    myBpValue = 0;
+  }
+  updateMyBpUI();
+}
+
+function saveMyBpValue(value) {
+  myBpValue = value;
+  localStorage.setItem('myBpValue', String(myBpValue));
+  updateMyBpUI();
+  updateTotalBpSum(); // пересчитать итог
+}
+
+function updateMyBpUI() {
+  const input = document.getElementById('myBpInput');
+  if (input) input.value = myBpValue;
+}
+
+function updateTotalBpSum() {
+  const totalSystem = document.getElementById('bpTotal')?.innerText;
+  const systemValue = totalSystem ? parseInt(totalSystem.replace(/\D/g, ''), 10) : 0;
+  const totalSum = myBpValue + systemValue;
+  const totalSpan = document.getElementById('totalBpSum');
+  if (totalSpan) totalSpan.innerText = totalSum;
+}
+function loadSettings() {
+  const savedHistoryToggle = localStorage.getItem('bpHistoryEnabled');
+  if (savedHistoryToggle !== null) bpHistoryEnabled = savedHistoryToggle === 'true';
+  const savedSound = localStorage.getItem('timerSound');
+  if (savedSound) selectedSound = savedSound;
+  const savedCustomSound = localStorage.getItem('customSoundUrl');
+  if (savedCustomSound) customSoundUrl = savedCustomSound;
+
+  // Применить UI
+  const toggle = document.getElementById('bpHistoryToggle');
+  if (toggle) toggle.checked = bpHistoryEnabled;
+  
+  const soundSelect = document.getElementById('timerSoundSelect');
+  if (soundSelect) soundSelect.value = selectedSound;
+  
+  const repeatsInput = document.getElementById('beepRepeatsInput');
+  if (repeatsInput) {
+    repeatsInput.value = getBeepRepeats();
+    repeatsInput.addEventListener('change', saveBeepRepeats);
+  }
+  
+  const clearBtn = document.getElementById('clearCustomSoundBtn');
+  if (clearBtn) clearBtn.style.display = selectedSound === 'custom' ? 'inline-block' : 'none';
+}
+function saveBpHistoryToggle() {
+  localStorage.setItem('bpHistoryEnabled', bpHistoryEnabled);
+}
+function saveSoundSettings() {
+  localStorage.setItem('timerSound', selectedSound);
+  if (selectedSound === 'custom' && customSoundUrl) {
+    localStorage.setItem('customSoundUrl', customSoundUrl);
+  } else {
+    localStorage.removeItem('customSoundUrl');
+  }
+}
+function getSoundPath(filename) {
+  if (!filename || filename === 'default' || filename === 'custom') return null;
+  // Пытаемся найти файл относительно папки, где лежит main.js
+  const possiblePaths = [
+    path.join(__dirname, 'sounds', filename),
+    path.join(process.cwd(), 'sounds', filename),
+    path.join(__dirname, '../sounds', filename)
+  ];
+  for (const fullPath of possiblePaths) {
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+  console.warn('Звук не найден:', filename);
+  return null;
+}
+function playSound(callback) {
+  if (selectedSound === 'default') {
+    playSingleBeep(0);
+    if (callback) setTimeout(callback, 250);
+    return;
+  }
+  if (selectedSound === 'custom' && customSoundUrl) {
+    const audio = new Audio(customSoundUrl);
+    audio.onended = () => { if (callback) callback(); };
+    audio.play().catch(err => { console.warn(err); if (callback) callback(); });
+    return;
+  }
+  const soundPath = getSoundPath(selectedSound);
+  if (soundPath) {
+    const audio = new Audio(`file://${soundPath}`);
+    audio.onended = () => { if (callback) callback(); };
+    audio.play().catch(err => {
+      console.warn(err);
+      playSingleBeep(0);
+      if (callback) setTimeout(callback, 250);
+    });
+  } else {
+    playSingleBeep(0);
+    if (callback) setTimeout(callback, 250);
+  }
+}
+function beepSequence() {
+  // Если уже есть активная очередь, прерываем её
+  abortBeepSequence();
+  
+  const repeats = getBeepRepeats();
+  let count = 0;
+  isBeepSequenceActive = true;
+  
+  function scheduleNext() {
+    if (!isBeepSequenceActive) return;
+    if (count >= repeats) {
+      isBeepSequenceActive = false;
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      playSound(() => {
+        count++;
+        scheduleNext();
+      });
+    }, count === 0 ? 0 : 320); // первый сразу, остальные с задержкой
+    currentBeepTimeouts.push(timeoutId);
+  }
+  scheduleNext();
+}
+function abortBeepSequence() {
+  // Очищаем все запланированные таймауты
+  for (const id of currentBeepTimeouts) {
+    clearTimeout(id);
+  }
+  currentBeepTimeouts = [];
+  isBeepSequenceActive = false;
+  stopCurrentAudio(); // останавливаем текущий звук
+}
+function previewSound() {
+  const soundSelect = document.getElementById('timerSoundSelect');
+  if (!soundSelect) return;
+  const sound = soundSelect.value;
+  
+  // Останавливаем текущий звук перед новым
+  stopCurrentAudio();
+  
+  if (sound === 'default') {
+    playSingleBeep(0);
+  } else if (sound === 'custom') {
+    if (customSoundUrl) {
+      const audio = new Audio(customSoundUrl);
+      currentAudio = audio;
+      audio.play().catch(e => console.log(e));
+      audio.onended = () => { if (currentAudio === audio) currentAudio = null; };
+    }
+  } else {
+    const soundPath = getSoundPath(sound);
+    if (soundPath) {
+      const audio = new Audio(`file://${soundPath}`);
+      currentAudio = audio;
+      audio.play().catch(err => console.warn('Preview error', err));
+      audio.onended = () => { if (currentAudio === audio) currentAudio = null; };
+    }
+  }
+}
+function stopCurrentAudio() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+}
+function setupCustomSound() {
+  const fileInput = document.getElementById('customSoundFile');
+  const soundSelect = document.getElementById('timerSoundSelect');
+  if (!fileInput) return;
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      customSoundUrl = url;
+      selectedSound = 'custom';
+      saveSoundSettings();
+      soundSelect.value = 'custom';
+      previewSound();
+      document.getElementById('clearCustomSoundBtn').style.display = 'inline-block';
+    }
+  });
+}
+function clearCustomSound() {
+  if (customSoundUrl) {
+    URL.revokeObjectURL(customSoundUrl);
+    customSoundUrl = null;
+  }
+  selectedSound = 'default';
+  saveSoundSettings();
+  document.getElementById('timerSoundSelect').value = 'default';
+  document.getElementById('clearCustomSoundBtn').style.display = 'none';
+  document.getElementById('customSoundFile').value = '';
+}
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  
+  // Разблокируем AudioContext
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.connect(ctx.destination);
+    const osc = ctx.createOscillator();
+    osc.connect(gain);
+    osc.start();
+    ctx.resume().then(() => {
+      osc.stop();
+      ctx.close();
+    }).catch(e => console.warn('AudioContext unlock failed', e));
+  } catch(e) {}
+  
+  // Разблокируем HTMLAudioElement, проиграв и остановив тихий звук
+  try {
+    const silent = new Audio();
+    silent.volume = 0;
+    const playPromise = silent.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        silent.pause();
+        silent.currentTime = 0;
+      }).catch(() => {});
+    }
+  } catch(e) {}
+}
+function bindAudioUnlock() {
+  const events = ['click', 'keydown', 'touchstart'];
+  const handler = () => {
+    unlockAudio();
+    events.forEach(e => document.removeEventListener(e, handler));
+  };
+  events.forEach(e => document.addEventListener(e, handler));
+}
+function playBeepNow(ctx) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.value = 880;
+  o.connect(g);
+  g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.0001, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+  o.start();
+  o.stop(ctx.currentTime + 0.24);
+}
 function applyDealTemplate(hours){
   document.getElementById('dealHours').value = hours;
   const start = new Date();
@@ -929,6 +1202,12 @@ function initRentMonthSelectors(){
     if(year === selectedRentYear) option.selected = true;
     yearSelect.appendChild(option);
   }
+}
+function filterRentByMonthYear(operations, month, year) {
+    return operations.filter(op => {
+        const endDate = new Date(op.endDate || op.end);
+        return endDate.getMonth() === month && endDate.getFullYear() === year;
+    });
 }
 function changeRentMonth(){
   const monthSelect = document.getElementById('rentMonthSelect');
@@ -1350,6 +1629,7 @@ function setBpMode(mode){
   renderBpTasks();
 }
 function recordBpUsage(id){
+  if (!bpHistoryEnabled) return; // Если отключено - не записываем
   if(!bpHistory[id]) bpHistory[id] = [];
   bpHistory[id].push(Date.now());
   bpHistory[id] = bpHistory[id].slice(-60);
@@ -1535,6 +1815,7 @@ function updateBpTotal(){
   }, 0);
 
   document.getElementById('bpTotal').textContent = checkedTotal + getOnline3hBpValue();
+  updateTotalBpSum();
 }
 function resetBpTasks(){
   Object.keys(bpChecked).forEach(k=>delete bpChecked[k]);
@@ -1601,8 +1882,18 @@ function startDailyBpResetWatcher(){
 }
 
 function getBeepRepeats(){ const saved=parseInt(localStorage.getItem('beepRepeats')||'3',10); return Math.max(1,Math.min(10,saved)); }
-function saveBeepRepeats(){ const input=document.getElementById('beepRepeatsInput'); let value=parseInt(input.value||'3',10); value=Math.max(1,Math.min(10,value)); input.value=value; localStorage.setItem('beepRepeats', String(value)); }
-function initBeepRepeats(){ document.getElementById('beepRepeatsInput').value=getBeepRepeats(); }
+function saveBeepRepeats(){
+  const input = document.getElementById('beepRepeatsInput');
+  let value = parseInt(input.value || '3', 10);
+  value = Math.max(1, Math.min(99, value));  // теперь до 99
+  input.value = value;
+  localStorage.setItem('beepRepeats', String(value));
+}
+function initBeepRepeats() {
+  const saved = localStorage.getItem('beepRepeats');
+  if (saved) document.getElementById('beepRepeatsInput').value = saved;
+  else document.getElementById('beepRepeatsInput').value = 3;
+}
 function parseTimeToSeconds(time){ const parts=time.split(':').map(Number); if(parts.length===2) return parts[0]*60+parts[1]; if(parts.length===3) return parts[0]*3600+parts[1]*60+parts[2]; return 0; }
 function formatTimer(total){
   total = Math.max(0, total);
@@ -1613,8 +1904,21 @@ function formatTimer(total){
 
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
-function playSingleBeep(delayMs){ setTimeout(()=>{ try{ const ctx=new(window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='sine'; o.frequency.value=880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.15,ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.22); o.start(); o.stop(ctx.currentTime+0.24);}catch(e){} }, delayMs); }
-function beepSequence(){ const repeats=getBeepRepeats(); for(let i=0;i<repeats;i++) playSingleBeep(i*320); }
+function playSingleBeep(delayMs) {
+  setTimeout(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Если контекст приостановлен, пробуем возобновить
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          playBeepNow(ctx);
+        }).catch(e => console.warn);
+      } else {
+        playBeepNow(ctx);
+      }
+    } catch(e) {}
+  }, delayMs);
+}
 function updateTimerDisplay(key){
   if(key === 'custom'){
     const hoursEl = document.getElementById('customTimerHours');
@@ -1672,10 +1976,15 @@ function startTimer(key){
   t.interval = setInterval(tick, 1000);
   tick(); // Сразу обновляем
 }
-function pauseTimer(key){ stopInterval(key); }
+function pauseTimer(key){
+  stopInterval(key);
+  abortBeepSequence(); // остановить звук
+}
 function resetTimer(key){
+  abortBeepSequence();
   if(key === 'custom'){
     stopInterval('custom');
+    
 
     timers.custom.initial = 0;
     timers.custom.remaining = 0;
@@ -1751,6 +2060,7 @@ function stopBpOnlineTimer(event){
     t.interval = null;
   }
 
+  abortBeepSequence();
   updateBpInlineTimerDisplay();
 }
 
@@ -1763,6 +2073,7 @@ function resetBpOnlineTimer(event){
     t.interval = null;
   }
 
+  abortBeepSequence();
   t.remaining = t.initial;
   online3hCycles = 0;
   saveOnline3hCycles();
@@ -1899,6 +2210,7 @@ function stopHintTimer(id){
     clearInterval(st.interval);
     st.interval = null;
   }
+  abortBeepSequence();
 }
 
 function resetHintTimer(id){
@@ -1990,6 +2302,7 @@ function pauseUserTimer(id){
   if(!timer) return;
 
   stopUserTimerInterval(timer);
+  abortBeepSequence();
   saveUserTimersToStorage();
   renderUserTimers();
 }
@@ -1999,6 +2312,7 @@ function resetUserTimer(id){
   if(!timer) return;
 
   stopUserTimerInterval(timer);
+  abortBeepSequence();
   timer.remaining = timer.initial;
   saveUserTimersToStorage();
   renderUserTimers();
@@ -2080,7 +2394,7 @@ function renderUserTimers(){
           <button class="hint-mini-btn reset" title="Сброс" onclick="resetUserTimer('${timer.id}')">↺</button>
         </div>
 
-        ${timer.confirmDelete ? `{
+        ${timer.confirmDelete ? `
           <div class="user-timer-delete-confirm">
             <div class="user-timer-delete-text">Действительно хотите удалить таймер?</div>
             <div class="user-timer-delete-actions">
@@ -2251,7 +2565,6 @@ updateRentMonthControls();
 updateRentStats();
   bindMoneyInputs();
   setupCommentAutocomplete();
-  initBeepRepeats();
   renderItems();
    document.getElementById('search')?.addEventListener('input', renderItems);
   initStatsMonthSelectors();
@@ -2289,6 +2602,48 @@ document.getElementById('dealHours')?.addEventListener('input', calculateDealTot
 document.getElementById('dealPricePerHour')?.addEventListener('input', calculateDealTotal);
 
 document.getElementById('rentMain')?.addEventListener('paste', handleRentPhotoPaste);
+loadMyBpValue();
+
+const myBpInput = document.getElementById('myBpInput');
+if (myBpInput) {
+  myBpInput.addEventListener('input', (e) => {
+    let val = parseInt(e.target.value, 10);
+    if (isNaN(val)) val = 0;
+    saveMyBpValue(val);
+  });
+}
+
+loadSettings();
+setupCustomSound();
+
+const bpToggle = document.getElementById('bpHistoryToggle');
+if (bpToggle) {
+  bpToggle.addEventListener('change', (e) => {
+    bpHistoryEnabled = e.target.checked;
+    saveBpHistoryToggle();
+  });
+}
+
+const soundSelect = document.getElementById('timerSoundSelect');
+if (soundSelect) {
+  soundSelect.addEventListener('change', (e) => {
+    selectedSound = e.target.value;
+    if (selectedSound === 'custom') {
+      document.getElementById('customSoundFile').click();
+    } else {
+      saveSoundSettings();
+      document.getElementById('clearCustomSoundBtn').style.display = 'none';
+      previewSound(); // предпросмотр
+    }
+  });
+}
+
+const clearSoundBtn = document.getElementById('clearCustomSoundBtn');
+if (clearSoundBtn) {
+  clearSoundBtn.addEventListener('click', clearCustomSound);
+}
+
+bindAudioUnlock();
 });
 
 function bindCustomTimerEditor(){
@@ -2386,7 +2741,30 @@ function initScrollToTopButton() {
   updateScrollToTopButton();
 }
 
-
+function customConfirm(message, onYes) {
+    const modal = document.getElementById('customConfirmModal');
+    const msgSpan = document.getElementById('confirmMessage');
+    msgSpan.innerText = message;
+    modal.style.display = 'flex';
+    
+    const yesBtn = document.getElementById('confirmYes');
+    const noBtn = document.getElementById('confirmNo');
+    
+    const handleYes = () => {
+        modal.style.display = 'none';
+        yesBtn.removeEventListener('click', handleYes);
+        noBtn.removeEventListener('click', handleNo);
+        if (onYes) onYes();
+    };
+    const handleNo = () => {
+        modal.style.display = 'none';
+        yesBtn.removeEventListener('click', handleYes);
+        noBtn.removeEventListener('click', handleNo);
+    };
+    
+    yesBtn.addEventListener('click', handleYes);
+    noBtn.addEventListener('click', handleNo);
+}
 
 function calculatePass(){
   console.log('=== START calculatePass ===');
@@ -2580,6 +2958,30 @@ function notifyBotRentalCreated(rental) {
     }
 }
 
+// Добавление аренды на сервер (для уведомлений в Telegram)
+async function addRentalToServer(propertyName, start, end, total) {
+    const key = localStorage.getItem('subscription_key');
+    if (!key) {
+        console.warn('Нет ключа для отправки аренды на сервер');
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/add-rental`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, propertyName, start, end, total })
+        });
+        const data = await response.json();
+        if (data.ok) {
+            console.log('Аренда сохранена на сервере, id:', data.rentalId);
+        } else {
+            console.error('Ошибка сохранения аренды:', data.error);
+        }
+    } catch (err) {
+        console.error('Ошибка соединения с сервером:', err);
+    }
+}
+
 // Проверка статуса подписки
 async function checkSubscriptionStatus() {
     if (window.require) {
@@ -2635,21 +3037,7 @@ function toggleRentShowAll(){
     updateRentStats();
 }
 
-function openRentHistoryModal(){
-    const modal = document.getElementById('rentHistoryModal');
-    if(modal) {
-        modal.style.display = 'flex';
-    }
-    
-    initRentHistoryMonthSelectors();
-    updateRentHistoryMonthControls();
-    renderRentHistoryTable();
-    updateRentHistoryTotal();
-}
 
-function closeRentHistoryModal(){
-    document.getElementById('rentHistoryModal').style.display = 'none';
-}
 
 function setRentHistoryFilter(filter){
     rentHistoryFilter = filter;
@@ -2668,33 +3056,7 @@ function updateRentHistoryMonthControls(){
     controls.style.display = rentHistoryFilter === 'month' ? 'flex' : 'none';
 }
 
-function initRentHistoryMonthSelectors(){
-    const monthSelect = document.getElementById('rentHistoryMonthSelect');
-    const yearSelect = document.getElementById('rentHistoryYearSelect');
-    if(!monthSelect || !yearSelect) return;
-    
-    monthSelect.innerHTML = '';
-    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
-                    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-    months.forEach((month, index) => {
-        const option = document.createElement('option');
-        option.value = String(index);
-        option.textContent = month;
-        if(index === selectedRentHistoryMonth) option.selected = true;
-        monthSelect.appendChild(option);
-    });
-    
-    yearSelect.innerHTML = '';
-    const currentYear = new Date().getFullYear();
-    const startYear = 2026;
-    for(let year = startYear; year <= currentYear + 1; year++){
-        const option = document.createElement('option');
-        option.value = String(year);
-        option.textContent = String(year);
-        if(year === selectedRentHistoryYear) option.selected = true;
-        yearSelect.appendChild(option);
-    }
-}
+
 
 function changeRentHistoryMonth(){
     const monthSelect = document.getElementById('rentHistoryMonthSelect');
@@ -2727,45 +3089,218 @@ function getFilteredRentHistory(){
     });
 }
 
-function renderRentHistoryTable(){
-    const body = document.getElementById('rentHistoryTable');
-    if(!body) {
-        console.error('❌ rentHistoryTable элемент не найден!');
-        return;
-    }
+// -------------------- История аренды --------------------
+let currentRentHistoryFilter = 'all'; // all, today, week, month
+
+// Функция фильтрации аренд по периоду
+function filterRentOperationsByPeriod(operations, period) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     
-    console.log('📊 Body элемент:', body);
-    console.log('Body offsetHeight:', body.offsetHeight);
-    console.log('Body offsetWidth:', body.offsetWidth);
-    
-    const filtered = getFilteredRentHistory();
-    body.innerHTML = '';
-    
-    if(!filtered.length){
-        body.innerHTML = '<div class="empty-state">Записей нет</div>';
-        return;
-    }
-    
-    filtered.forEach(op => {
-        const row = document.createElement('div');
-        row.className = 'row-entry';
-        row.innerHTML = `
-            <div>${op.propertyName || '-'}</div>
-            <div>${formatDate(op.start)}</div>
-            <div>${formatDate(op.end)}</div>
-            <div class="money-plus">${moneyWithCurrency(op.total)}</div>
-            <div></div>
-        `;
-        body.appendChild(row);
+    return operations.filter(op => {
+        const endDate = new Date(op.endDate || op.end);
+        if (period === 'today') return endDate >= today;
+        if (period === 'week') return endDate >= startOfWeek;
+        if (period === 'month') return endDate >= startOfMonth;
+        return true;
     });
-    
-    console.log('✅ Добавлено строк:', body.children.length);
 }
 
-function updateRentHistoryTotal(){
-    const filtered = getFilteredRentHistory();
-    const total = filtered.reduce((sum, op) => sum + (op.total || 0), 0);
-    document.getElementById('rentHistoryTotal').innerText = moneyWithCurrency(total);
+
+function updateRentHistory() {
+    renderRentHistoryTable();
+}
+
+// Обновление активной кнопки периода
+function updateRentHistoryPeriodButtons() {
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        const period = btn.getAttribute('data-period');
+        if (period === currentRentHistoryFilter) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+}
+
+// ---------- История аренды ----------
+function filterRentHistoryByPeriod(operations) {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // сегодня 00:00
+
+    // Неделя с воскресенья по субботу
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(todayStart.getDate() - todayStart.getDay()); // воскресенье
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6); // суббота
+
+    if (rentHistoryFilter === 'today') {
+        return operations.filter(op => {
+            const end = new Date(op.end);
+            const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+            return endDate.getTime() === todayStart.getTime();
+        });
+    }
+    if (rentHistoryFilter === 'week') {
+        return operations.filter(op => {
+            const end = new Date(op.end);
+            const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+            return endDate >= weekStart && endDate <= weekEnd;
+        });
+    }
+    if (rentHistoryFilter === 'month') {
+        return operations.filter(op => {
+            const end = new Date(op.end);
+            return end.getMonth() === rentHistorySelectedMonth && end.getFullYear() === rentHistorySelectedYear;
+        });
+    }
+    return operations; // 'all'
+}
+
+function renderRentHistoryTable() {
+    const tbody = document.getElementById('rentHistoryTableBody');
+    if (!tbody) return;
+    
+    const filtered = filterRentHistoryByPeriod(rentOperations);
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:40px;">Нет записей аренды</td></tr>';
+        document.getElementById('rentHistoryTotal').innerText = '0';
+        return;
+    }
+    
+    let html = '';
+    let total = 0;
+    for (const op of filtered) {
+        const car = op.propertyName || 'Без названия';
+        const start = new Date(op.start).toLocaleDateString();
+        const end = new Date(op.end).toLocaleDateString();
+        const price = op.totalPrice ?? op.total ?? op.price ?? op.amount ?? 0;
+        total += price;
+        html += `
+            <tr data-id="${op.id}">
+                <td style="padding:8px;">${escapeHtml(car)}</td>
+                <td style="padding:8px;">${start} – ${end}</td>
+                <td style="text-align:right; padding:8px;">${price.toLocaleString()} ₽</td>
+                <td style="text-align:center; padding:8px;">
+                    <button class="delete-rent-btn" data-id="${op.id}" style="background:#dc3545; border:none; border-radius:4px; color:white; padding:4px 8px; cursor:pointer;">Удалить</button>
+                </td>
+            </tr>
+        `;
+    }
+    tbody.innerHTML = html;
+    document.getElementById('rentHistoryTotal').innerText = total.toLocaleString();
+
+    // Навешиваем обработчики на кнопки удаления
+    document.querySelectorAll('.delete-rent-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = parseInt(btn.getAttribute('data-id'));
+            deleteRentHistoryItem(id);
+        });
+    });
+}
+
+// Функция удаления записи по id
+function deleteRentHistoryItem(id) {
+    customConfirm('Удалить эту запись аренды?', () => {
+        rentOperations = rentOperations.filter(op => op.id !== id);
+        saveRentOperations();
+        renderRentHistoryTable();
+        if (typeof renderRentOperations === 'function') renderRentOperations();
+        const total = rentOperations.reduce((sum, op) => sum + (op.totalPrice ?? op.total ?? op.price ?? 0), 0);
+        document.getElementById('rentHistoryTotal').innerText = total.toLocaleString();
+    });
+}
+
+function setRentHistoryFilter(filter) {
+    rentHistoryFilter = filter;
+    // Обновить активные классы кнопок
+    document.querySelectorAll('#rentHistoryModal .filter-chip').forEach(btn => {
+        const btnFilter = btn.getAttribute('data-filter');
+        if (btnFilter === filter) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+    // Показать/скрыть селекторы месяца и года
+    const monthControls = document.getElementById('rentHistoryMonthPeriodControls');
+    if (monthControls) {
+        monthControls.style.display = filter === 'month' ? 'inline-flex' : 'none';
+    }
+    if (filter === 'month') {
+        initRentHistoryMonthSelectors();
+        initRentHistoryYearSelectors();
+    }
+    renderRentHistoryTable(); // перерисовываем
+}
+
+function initRentHistoryMonthSelectors() {
+    const monthSelect = document.getElementById('rentHistoryMonthSelect');
+    if (!monthSelect) return;
+    const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    monthSelect.innerHTML = months.map((m, idx) => `<option value="${idx}" ${idx === rentHistorySelectedMonth ? 'selected' : ''}>${m}</option>`).join('');
+}
+
+function initRentHistoryYearSelectors() {
+    const yearSelect = document.getElementById('rentHistoryYearSelect');
+    if (!yearSelect) return;
+    const currentYear = new Date().getFullYear();
+    const startYear = currentYear - 2;
+    const endYear = currentYear + 1;
+    let html = '';
+    for (let y = startYear; y <= endYear; y++) {
+        html += `<option value="${y}" ${y === rentHistorySelectedYear ? 'selected' : ''}>${y}</option>`;
+    }
+    yearSelect.innerHTML = html;
+}
+
+function changeRentHistoryMonth() {
+    const monthSelect = document.getElementById('rentHistoryMonthSelect');
+    const yearSelect = document.getElementById('rentHistoryYearSelect');
+    if (monthSelect && yearSelect) {
+        rentHistorySelectedMonth = parseInt(monthSelect.value);
+        rentHistorySelectedYear = parseInt(yearSelect.value);
+        renderRentHistoryTable();
+    }
+}
+
+// Инициализация модалки (вызывается при открытии)
+function initRentHistoryModal() {
+    setRentHistoryFilter(rentHistoryFilter);
+    // Кнопка сброса
+    const clearBtn = document.getElementById('clearHistoryBtn');
+    if (clearBtn) {
+        clearBtn.onclick = () => {
+            if (confirm('Удалить всю историю аренды?')) {
+                rentOperations = [];
+                saveRentOperations(); // функция сохранения в localStorage
+                renderRentHistoryTable();
+                if (typeof renderRentOperations === 'function') renderRentOperations(); // обновить основную вкладку
+            }
+        };
+    }
+}
+
+function openRentHistoryModal() {
+    const modal = document.getElementById('rentHistoryModal');
+    if (modal) {
+        initRentHistoryModal();
+        modal.style.display = 'flex';
+    }
+}
+
+function closeRentHistoryModal() {
+    const modal = document.getElementById('rentHistoryModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Вспомогательная функция для экранирования HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
 }
 
 // Закрытие модального окна по клику вне контента
@@ -2992,26 +3527,21 @@ async function activateKey() {
 
 // Проверка при загрузке страницы (исправлен ID модального окна)
 window.addEventListener('DOMContentLoaded', () => {
+    console.log('1. DOMContentLoaded сработал');
     const expiry = localStorage.getItem('subscription_expiry');
+    console.log('2. expiry =', expiry);
     const modal = document.getElementById('activationModal');
-    if (!modal) return;
-    
-    if (expiry && new Date(expiry) > new Date()) {
-        modal.style.display = 'none'; // подписка активна, скрываем
+    console.log('3. modal элемент =', modal);
+    if (modal) {
+        if (expiry && new Date(expiry) > new Date()) {
+            modal.style.display = 'none';
+            console.log('4. Модалка скрыта, подписка активна');
+        } else {
+            modal.style.display = 'flex';
+            console.log('4. Модалка показана (нет даты или истекла)');
+        }
     } else {
-        modal.style.display = 'flex'; // показываем модалку
-    }
-});
-
-// Проверка при запуске
-window.addEventListener('DOMContentLoaded', () => {
-    const expiry = localStorage.getItem('subscription_expiry');
-    const modal = document.getElementById('activationModal');
-    if (!modal) return;
-    if (expiry && new Date(expiry) > new Date()) {
-        modal.style.display = 'none';
-    } else {
-        modal.style.display = 'flex';
+        console.error('5. Модальное окно не найдено');
     }
 });
 
