@@ -168,6 +168,19 @@ bot.onText(/\/addkey (.+)/, (msg, match) => {
     bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
 });
 
+// Админ-команда: очистка завершённых аренд
+bot.onText(/\/clearoldrentals/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const data = readRentData();
+    const now = new Date();
+    const originalCount = data.rentals?.length || 0;
+    // Оставляем только те аренды, у которых дата окончания ещё не наступила
+    data.rentals = (data.rentals || []).filter(r => new Date(r.end) > now);
+    writeRentData(data);
+    const removed = originalCount - data.rentals.length;
+    bot.sendMessage(msg.chat.id, `🧹 Очищено ${removed} завершённых аренд. Осталось активных: ${data.rentals.length}.`);
+});
+
 // ========== ДИАГНОСТИКА АРЕНД ==========
 bot.onText(/\/showrentdata/, (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
