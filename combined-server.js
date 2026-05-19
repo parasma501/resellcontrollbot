@@ -5,17 +5,14 @@ const path = require('path');
 
 const app = express();
 
-// Добавь CORS middleware!
+// CORS middleware
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -23,120 +20,79 @@ app.use(express.urlencoded({ extended: true }));
 const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = process.env.ADMIN_ID || '705565283';
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    console.log('📁 Папка для данных создана:', DATA_DIR);
-}
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const PAYMENT_LINK = process.env.PAYMENT_LINK || 'https://yoomoney.ru/to/4100119530608840';
 
-// ======== ИНИЦИАЛИЗАЦИЯ ========
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-
 console.log('🤖 Бот запущен!');
-console.log(`💳 Платежный сервер на порту ${PORT}`);
+console.log(`💳 Сервер на порту ${PORT}`);
 
-// ======== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========
+// ========== РАБОТА С ДАННЫМИ ==========
 function readRentData() {
     try {
         const filePath = path.join(DATA_DIR, 'rent-data.json');
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-    } catch (error) {
-        console.error('Ошибка чтения rent-data.json:', error);
-    }
+        if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch(e) { console.error(e); }
     return { rentals: [], lastNotification: {} };
 }
-
 function writeRentData(data) {
     try {
-        const filePath = path.join(DATA_DIR, 'rent-data.json');
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    } catch (error) {
-        console.error('Ошибка записи rent-data.json:', error);
-    }
+        fs.writeFileSync(path.join(DATA_DIR, 'rent-data.json'), JSON.stringify(data, null, 2));
+    } catch(e) { console.error(e); }
 }
-
-function readSubscription() {
-    try {
-        const filePath = path.join(DATA_DIR, 'subscription.json');
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-    } catch (error) {
-        console.error('Ошибка чтения subscription.json:', error);
-    }
-    return { isActive: false, expiryDate: null };
-}
-
-function writeSubscription(data) {
-    try {
-        const filePath = path.join(DATA_DIR, 'subscription.json');
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    } catch (error) {
-        console.error('Ошибка записи subscription.json:', error);
-    }
-}
-
 function readPayments() {
     try {
         const filePath = path.join(DATA_DIR, 'payments.json');
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-    } catch (error) {
-        console.error('Ошибка чтения payments.json:', error);
-    }
+        if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch(e) { console.error(e); }
     return { payments: [] };
 }
-
 function writePayments(data) {
     try {
-        const filePath = path.join(DATA_DIR, 'payments.json');
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    } catch (error) {
-        console.error('Ошибка записи payments.json:', error);
-    }
+        fs.writeFileSync(path.join(DATA_DIR, 'payments.json'), JSON.stringify(data, null, 2));
+    } catch(e) { console.error(e); }
 }
-
 function readKeys() {
     try {
         const filePath = path.join(DATA_DIR, 'keys.json');
         if (fs.existsSync(filePath)) {
             const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-            // Если это объект с полем keys (старый формат) – извлекаем массив
-            if (data && !Array.isArray(data) && Array.isArray(data.keys)) {
-                console.log('🔄 Конвертация старого формата keys.json');
-                return data.keys;
-            }
-            // Если это уже массив – возвращаем его
             if (Array.isArray(data)) return data;
+            if (data && Array.isArray(data.keys)) return data.keys;
         }
-    } catch (error) {
-        console.error('❌ Ошибка чтения keys.json:', error);
-    }
-    return []; // всегда возвращаем массив
+    } catch(e) { console.error(e); }
+    return [];
 }
-
 function writeKeys(keysArray) {
     try {
-        const filePath = path.join(DATA_DIR, 'keys.json');
-        if (!Array.isArray(keysArray)) {
-            console.error('❌ writeKeys: передан не массив', keysArray);
-            return;
-        }
-        fs.writeFileSync(filePath, JSON.stringify(keysArray, null, 2));
+        if (!Array.isArray(keysArray)) return;
+        fs.writeFileSync(path.join(DATA_DIR, 'keys.json'), JSON.stringify(keysArray, null, 2));
         console.log(`💾 Сохранено ${keysArray.length} ключей`);
-    } catch (error) {
-        console.error('❌ Ошибка записи keys.json:', error);
+    } catch(e) { console.error(e); }
+}
+function saveUser(chatId) {
+    const usersPath = path.join(DATA_DIR, 'users.json');
+    let users = [];
+    try {
+        if (fs.existsSync(usersPath)) users = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
+    } catch(e) {}
+    if (!users.includes(chatId)) {
+        users.push(chatId);
+        fs.writeFileSync(usersPath, JSON.stringify(users, null, 2));
+        console.log(`➕ Новый пользователь: ${chatId}`);
     }
 }
+function formatDateTime(isoString) {
+    const d = new Date(isoString);
+    return d.toLocaleString('ru-RU');
+}
 
-// ======== КОМАНДЫ БОТА ========
+// ========== КОМАНДЫ БОТА ==========
 bot.onText(/\/start/, (msg) => {
+    saveUser(msg.chat.id);
     const chatId = msg.chat.id;
-    const welcomeMessage = `
+    bot.sendMessage(chatId, `
 👋 Добро пожаловать в Resell Control Bot!
 
 📌 Доступные команды:
@@ -149,13 +105,12 @@ bot.onText(/\/start/, (msg) => {
 1. Нажми /pay
 2. Оплати сумму
 3. Подписка активируется автоматически!
-    `;
-    bot.sendMessage(chatId, welcomeMessage);
+    `);
 });
 
 bot.onText(/\/help/, (msg) => {
-    const chatId = msg.chat.id;
-    const helpMessage = `
+    saveUser(msg.chat.id);
+    bot.sendMessage(msg.chat.id, `
 📖 **Помощь:**
 
 /start - Стартовое сообщение
@@ -164,286 +119,175 @@ bot.onText(/\/help/, (msg) => {
 /pay - Оплата подписки
 /rentals - Активные аренды
 /payments - История платежей
-/activatekey КЛЮЧ - Активация ключа
 /clue - Порядок действий при оплате
 
 🔧 **Админ-команды:**
 /generatekey - Создать ключ
-/activate - Вручную активировать
 /addpayment - Записать платёж
-    `;
-    bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+    `, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/pay/, (msg) => {
-    const chatId = msg.chat.id;
-    // Здесь будет ссылка на оплату через Palych
-    const paymentMessage = `
-💎 **Оплата подписки**
-
-Нажми кнопку ниже для оплаты:
-
-[ОПЛАТИТЬ](${PAYMENT_LINK})
-
-После оплаты подписка активируется автоматически!
-    `;
-    bot.sendMessage(chatId, paymentMessage, { parse_mode: 'Markdown' });
+    saveUser(msg.chat.id);
+    bot.sendMessage(msg.chat.id, `💎 **Оплата подписки**\n\n[ОПЛАТИТЬ](${PAYMENT_LINK})`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/status/, (msg) => {
-    const chatId = msg.chat.id;
-    const subscription = readSubscription();
-    let message;
-    // Всегда показываем, что подписка активна
-message = ` **Статус подписки: АКТИВЕН** ✅`;
-bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    saveUser(msg.chat.id);
+    bot.sendMessage(msg.chat.id, `**Статус подписки: АКТИВЕН** ✅`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/rentals/, (msg) => {
-    const chatId = msg.chat.id;
-    const subscription = readSubscription();
-    const now = new Date();
-    
-    // Если подписка активна — показываем аренды
+    saveUser(msg.chat.id);
     const data = readRentData();
     if (!data.rentals || data.rentals.length === 0) {
-        bot.sendMessage(chatId, '📭 Активных аренд нет');
+        bot.sendMessage(msg.chat.id, '📭 Активных аренд нет');
         return;
     }
     const activeRentals = data.rentals.filter(r => new Date(r.end) > new Date());
     if (activeRentals.length === 0) {
-        bot.sendMessage(chatId, '📭 Активных аренд нет');
+        bot.sendMessage(msg.chat.id, '📭 Активных аренд нет');
         return;
     }
     let message = '🚗 **Активные аренды:**\n\n';
     activeRentals.forEach((rental, index) => {
         const endDate = new Date(rental.end);
-        const now = new Date();
-        const diffMs = endDate - now;
-        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
-        message += `${index + 1}. *${rental.propertyName}*\n`;
-        message += `   🕐 Окончание: ${formatDateTime(rental.end)} (${diffHours}ч)\n\n`;
+        const diffHours = Math.ceil((endDate - new Date()) / (1000 * 60 * 60));
+        message += `${index+1}. *${rental.propertyName}*\n   🕐 Окончание: ${formatDateTime(rental.end)} (${diffHours}ч)\n\n`;
     });
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/payments/, (msg) => {
-    const chatId = msg.chat.id;
+    saveUser(msg.chat.id);
     const data = readPayments();
     if (!data.payments || data.payments.length === 0) {
-        bot.sendMessage(chatId, '📭 История платежей пуста');
+        bot.sendMessage(msg.chat.id, '📭 История платежей пуста');
         return;
     }
     let message = '💳 **История платежей:**\n\n';
-    data.payments.slice(-10).reverse().forEach((payment, index) => {
-        message += `${index + 1}. 💵 ${payment.amount}$ - ${payment.status}\n`;
-        message += `   📅 ${formatDateTime(payment.timestamp)}\n\n`;
+    data.payments.slice(-10).reverse().forEach((p, i) => {
+        message += `${i+1}. 💵 ${p.amount}$ - ${p.status}\n   📅 ${formatDateTime(p.timestamp)}\n\n`;
     });
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/activate/, (msg) => {
-    if (msg.chat.id.toString() !== ADMIN_ID) {
-        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
-        return;
-    }
-    
-    const subscription = readSubscription();
-    subscription.isActive = true;
-    subscription.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    writeSubscription(subscription);
-    
-    bot.sendMessage(msg.chat.id, `
-💎 **Подписка активирована!**
+bot.onText(/\/clue/, (msg) => {
+    saveUser(msg.chat.id);
+    const discordLink = 'https://discord.gg/EfndfUnApv';
+    bot.sendMessage(msg.chat.id, 
+        `💳 **Чтобы получить ключ активации:**\n\n1. Оплатите подписку по ссылке: ${PAYMENT_LINK}\n2. После оплаты напишите **мне в Discord**: ${discordLink}\n3. Я проверю оплату и выдам вам ключ.\n\nСумма: 150 руб. Срок: 1 месяц.`,
+        { parse_mode: 'Markdown' });
+});
 
-📅 Действует до: ${formatDateTime(subscription.expiryDate)}
-    `, { parse_mode: 'Markdown' });
+// Админские команды
+bot.onText(/\/generatekey/, (msg) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const keys = readKeys();
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+    keys.push({
+        key, used: false, activatedBy: null,
+        expiryDate: expiryDate.toISOString(),
+        createdAt: new Date().toISOString()
+    });
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Новый ключ: \`${key}\``, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/addpayment/, (msg) => {
-    if (msg.chat.id.toString() !== ADMIN_ID) {
-        bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
-        return;
-    }
-    
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
     const data = readPayments();
     data.payments.push({
         order_id: 'manual-' + Date.now(),
-        amount: 1000,  // Сумма платежа
+        amount: 1000,
         status: 'completed',
         timestamp: new Date().toISOString(),
-        user_id: msg.chat.id  // Кто оплатил
+        user_id: msg.chat.id
     });
     writePayments(data);
-    
     bot.sendMessage(msg.chat.id, '✅ Платеж записан в историю!');
-});
-
-// Активация ключа пользователем
-bot.onText(/\/activatekey/, (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    const key = text.split(' ')[1];
-    
-    if (!key) {
-        bot.sendMessage(chatId, 'Используй: /activatekey ТВОЙ_КЛЮЧ');
-        return;
-    }
-    
-    const keysData = readKeys();  // { keys: [] }
-    const found = keysData.keys.find(k => k.key === key);  // ← ИСПРАВЛЕНИЕ!
-    
-    if (!found) {
-        bot.sendMessage(chatId, '❌ Неверный ключ!');
-        return;
-    }
-    
-    if (found.used) {
-        bot.sendMessage(chatId, '❌ Ключ уже использован!');
-        return;
-    }
-    
-    found.used = true;
-    found.activatedBy = chatId;
-    found.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    
-    writeKeys(keysData);
-    
-    const subscription = readSubscription();
-    subscription.isActive = true;
-    subscription.expiryDate = found.expiryDate;
-    writeSubscription(subscription);
-    
-    bot.sendMessage(chatId, `
-✅ **Ключ активирован!**
-
-💎 Подписка активна до: ${formatDateTime(found.expiryDate)}
-    `, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/generatekey/, (msg) => {
-    try {
-        if (String(msg.chat.id) !== String(ADMIN_ID)) {
-            bot.sendMessage(msg.chat.id, '❌ Доступно только админу!');
-            return;
-        }
-        const key = 'RES-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-        const keys = readKeys(); // массив
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + 30); // +30 дней от сегодня
-        keys.push({
-            key: key,
-            used: false,
-            activatedBy: null,
-            expiryDate: expiryDate.toISOString(),
-            createdAt: new Date().toISOString()
-        });
-        writeKeys(keys);
-        bot.sendMessage(msg.chat.id, `✅ Новый ключ: \`${key}\``, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error(error);
-        bot.sendMessage(msg.chat.id, '❌ Ошибка при генерации ключа');
-    }
-});
-
-// Проверка ключа (для Electron приложения)
-app.post('/checkkey', (req, res) => {
-    const { key } = req.body;
-    console.log('🔍 /checkkey получен ключ:', key);
-    
-    const keys = readKeys(); // массив
-    const found = keys.find(k => k.key === key);
-    
-    if (!found) {
-        console.log('❌ Ключ не найден');
-        return res.json({ valid: false, message: 'Неверный ключ' });
-    }
-    
-    // Если ключ уже использован, проверим срок
-    if (found.used === true) {
-        if (found.expiryDate && new Date(found.expiryDate) > new Date()) {
-            console.log('✅ Подписка активна (ключ уже активирован)');
-            return res.json({ valid: true, expiryDate: found.expiryDate });
-        } else {
-            console.log('❌ Срок подписки истёк');
-            return res.json({ valid: false, message: 'Срок подписки истёк' });
-        }
-    }
-    
-    // Проверка срока действия (если указан)
-    let expiryDate = found.expiryDate ? new Date(found.expiryDate) : null;
-    if (expiryDate && new Date() > expiryDate) {
-        console.log('❌ Ключ истёк');
-        return res.json({ valid: false, message: 'Ключ истёк' });
-    }
-    
-    // Первая активация ключа
-    found.used = true;
-    found.activatedBy = req.body.userId || 'electron-client';
-    writeKeys(keys);
-    
-    console.log('✅ Ключ активирован впервые, срок до:', found.expiryDate);
-    res.json({
-        valid: true,
-        expiryDate: found.expiryDate,
-        message: 'Подписка активирована'
-    });
 });
 
 bot.onText(/\/showallkeys/, (msg) => {
     if (String(msg.chat.id) !== String(ADMIN_ID)) return;
-    const keys = readKeys(); // должен вернуть массив
-    if (!keys.length) {
-        bot.sendMessage(msg.chat.id, '📭 Ключей нет');
-        return;
-    }
+    const keys = readKeys();
+    if (!keys.length) return bot.sendMessage(msg.chat.id, '📭 Ключей нет');
     const list = keys.map(k => `${k.key} — used: ${k.used}${k.expiryDate ? `, истекает: ${new Date(k.expiryDate).toLocaleString()}` : ''}`).join('\n');
     bot.sendMessage(msg.chat.id, `📋 Список ключей:\n${list}`);
 });
 
-bot.onText(/\/clue/, (msg) => {
-    const chatId = msg.chat.id;
-    const discordLink = 'https://discord.gg/EfndfUnApv'; // ваша ссылка-приглашение
-    const paymentLink = 'https://yoomoney.ru/to/4100119530608840'; // ваша ссылка на оплату
-
-    bot.sendMessage(chatId, 
-        `💳 **Чтобы получить ключ активации:**\n\n` +
-        `1. Оплатите подписку по ссылке: ${paymentLink}\n` +
-        `2. После оплаты напишите **мне в Discord**: ${discordLink}\n` +
-        `3. Я проверю оплату и выдам вам ключ.\n\n` +
-        `Сумма: 150 руб. Срок: 1 месяц.`,
-        { parse_mode: 'Markdown' }
-    );
+// ========== WEBHOOK ДЛЯ ПЛАТЕЖЕЙ ==========
+app.post('/success', (req, res) => {
+    const { order_id, amount, status, user_id } = req.body;
+    console.log('✅ Успешный платеж:', { order_id, amount, status });
+    const data = readPayments();
+    data.payments.push({ order_id, amount, status, timestamp: new Date().toISOString(), user_id });
+    writePayments(data);
+    bot.sendMessage(ADMIN_ID, `💰 **Платеж успешен!**\n📋 Order ID: ${order_id}\n💵 ${amount}\n📅 ${new Date().toLocaleString()}`);
+    if (user_id) {
+        bot.sendMessage(user_id, `✅ **Оплата прошла успешно!**\n💎 Подписка активирована!`);
+    }
+    res.status(200).send('OK');
 });
 
-// ======== ПРОВЕРКА АРЕНД ========
+app.post('/fail', (req, res) => {
+    const { order_id, error, user_id } = req.body;
+    console.log('❌ Неудачный платеж:', order_id, error);
+    bot.sendMessage(ADMIN_ID, `💔 **Платеж не удался!**\n📋 ${order_id}\n❌ ${error || 'Неизвестная ошибка'}`);
+    res.status(200).send('OK');
+});
+
+// ========== ЭНДПОИНТ ДЛЯ ПРИЛОЖЕНИЯ ==========
+app.post('/checkkey', (req, res) => {
+    const { key, telegramId } = req.body;
+    console.log('🔍 /checkkey получен ключ:', key);
+    const keys = readKeys();
+    const found = keys.find(k => k.key === key);
+    if (!found) return res.json({ valid: false, message: 'Неверный ключ' });
+    if (found.used === true) {
+        if (found.expiryDate && new Date(found.expiryDate) > new Date()) {
+            return res.json({ valid: true, expiryDate: found.expiryDate });
+        } else {
+            return res.json({ valid: false, message: 'Срок подписки истёк' });
+        }
+    }
+    found.used = true;
+    found.activatedBy = telegramId || 'electron-client';
+    found.telegramId = telegramId;
+    writeKeys(keys);
+    res.json({ valid: true, expiryDate: found.expiryDate, message: 'Подписка активирована' });
+});
+
+app.post('/api/rental-ended', (req, res) => {
+    const { telegramId, carName, endDate } = req.body;
+    if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
+    bot.sendMessage(telegramId, `🚗 Машина "${carName}" вернулась из аренды (${new Date(endDate).toLocaleDateString()}).`)
+        .then(() => res.json({ ok: true }))
+        .catch(err => res.status(500).json({ error: err.message }));
+});
+
+// ========== ПРОВЕРКА ЗАВЕРШЁННЫХ АРЕНД ==========
 function checkRentalsAndNotify() {
     const data = readRentData();
     const now = new Date();
     const notificationsSent = data.lastNotification || {};
     let hasChanges = false;
-
-    data.rentals.forEach((rental) => {
+    data.rentals.forEach(rental => {
         const endDate = new Date(rental.end);
         const rentalId = rental.id;
         if (endDate <= now && !notificationsSent[rentalId]) {
-            const message = `
-🔔 **Аренда завершена!**
-
-🚗 Машина: *${rental.propertyName}*
-📅 Начало: ${formatDateTime(rental.start)}
-📅 Конец: ${formatDateTime(rental.end)}
-💰 Сумма: ${rental.total.toLocaleString('ru-RU')}$
-
-Машина вернулась с аренды!
-            `;
-            bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+            const message = `🔔 **Аренда завершена!**\n🚗 Машина: *${rental.propertyName}*\n📅 Начало: ${formatDateTime(rental.start)}\n📅 Конец: ${formatDateTime(rental.end)}\n💰 Сумма: ${rental.total.toLocaleString('ru-RU')}$\n\nМашина вернулась с аренды!`;
+            if (rental.telegramId) {
+                bot.sendMessage(rental.telegramId, message, { parse_mode: 'Markdown' }).catch(e => console.error(e));
+            } else {
+                bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+            }
             notificationsSent[rentalId] = true;
             hasChanges = true;
         }
     });
-
     if (hasChanges) {
         data.lastNotification = notificationsSent;
         writeRentData(data);
@@ -452,128 +296,9 @@ function checkRentalsAndNotify() {
 setInterval(checkRentalsAndNotify, 5 * 60 * 1000);
 checkRentalsAndNotify();
 
-// ======== ПЛАТЕЖНЫЕ WEBHOOKS ========
-app.post('/success', (req, res) => {
-    const { order_id, amount, status, user_id } = req.body;
-    
-    console.log('✅ Успешный платеж:', { order_id, amount, status });
-    
-    const data = readPayments();
-    data.payments.push({
-        order_id,
-        amount,
-        status,
-        timestamp: new Date().toISOString(),
-        user_id
-    });
-    writePayments(data);
-    
-    // Активируем подписку
-    const subscription = readSubscription();
-    subscription.isActive = true;
-    subscription.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 дней
-    writeSubscription(subscription);
-    
-    // Уведомляем админа
-    bot.sendMessage(ADMIN_ID, `
-💰 **Платеж успешно завершен!**
+// ========== ТЕСТОВЫЕ МАРШРУТЫ ==========
+app.get('/ping', (req, res) => res.send('pong'));
+app.get('/', (req, res) => res.send('🤖 Resell Control Bot is alive!'));
 
-📋 Order ID: ${order_id}
-💵 Сумма: ${amount}
-📅 Время: ${new Date().toLocaleString('ru-RU')}
-🔄 Подписка АКТИВИРОВАНА
-    `, { parse_mode: 'Markdown' });
-    
-    // Уведомляем пользователя
-    if (user_id) {
-        bot.sendMessage(user_id, `
-✅ **Оплата прошла успешно!**
-
-💎 Ваша подписка активирована!
-📅 Действует до: ${formatDateTime(subscription.expiryDate)}
-        `, { parse_mode: 'Markdown' });
-    }
-    
-    res.status(200).send('OK');
-});
-
-app.post('/fail', (req, res) => {
-    const { order_id, error, user_id } = req.body;
-    
-    console.log('❌ Неудачный платеж:', { order_id, error });
-    
-    bot.sendMessage(ADMIN_ID, `
-💔 **Платеж не удался!**
-
-📋 Order ID: ${order_id}
-❌ Ошибка: ${error || 'Неизвестная ошибка'}
-    `, { parse_mode: 'Markdown' });
-    
-    res.status(200).send('OK');
-});
-
-app.post('/result', (req, res) => {
-    const { order_id, status, transaction_id } = req.body;
-    
-    console.log('🔁 Результат платежа:', { order_id, status, transaction_id });
-    
-    const data = readPayments();
-    const payment = data.payments.find(p => p.order_id === order_id);
-    if (payment) {
-        payment.status = status;
-        payment.transaction_id = transaction_id;
-        writePayments(data);
-    }
-    
-    res.status(200).send('OK');
-});
-
-app.post('/refund', (req, res) => {
-    const { order_id, amount, reason } = req.body;
-    
-    console.log('💸 Возврат:', { order_id, amount, reason });
-    
-    bot.sendMessage(ADMIN_ID, `
-💸 **Возврат платежа!**
-
-📋 Order ID: ${order_id}
-💵 Сумма: ${amount}
-📝 Причина: ${reason || 'Не указана'}
-    `, { parse_mode: 'Markdown' });
-    
-    res.status(200).send('OK');
-});
-
-app.post('/chargeback', (req, res) => {
-    const { order_id, amount, reason } = req.body;
-    
-    console.log('⚡ Чарджбэк:', { order_id, amount, reason });
-    
-    bot.sendMessage(ADMIN_ID, `
-⚡ **ЧАРДЖБЭК ПОЛУЧЕН!**
-
-📋 Order ID: ${order_id}
-💵 Сумма: ${amount}
-📝 Причина: ${reason || 'Не указана'}
-    `, { parse_mode: 'Markdown' });
-    
-    res.status(200).send('OK');
-});
-
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
-});
-
-// ==================== ТЕСТОВЫЙ МАРШРУТ ====================
-app.get('/ping', (req, res) => {
-    res.send('pong');
-});
-
-// ======== ЗАПУСК ========
-app.listen(PORT, () => {
-    console.log(`💳 Payment server running on port ${PORT}`);
-});
-
-app.get('/', (req, res) => {
-    res.send('🤖 Resell Control Bot is alive!');
-});
+// ========== ЗАПУСК ==========
+app.listen(PORT, () => console.log(`💳 Payment server running on port ${PORT}`));
