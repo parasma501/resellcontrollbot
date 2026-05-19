@@ -285,6 +285,17 @@ app.post('/checkkey', (req, res) => {
     res.json({ valid: true, expiryDate: found.expiryDate, message: 'Подписка активирована' });
 });
 
+bot.onText(/\/showrawkeys/, (msg) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const filePath = path.join(DATA_DIR, 'keys.json');
+    if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        bot.sendMessage(msg.chat.id, `\`\`\`json\n${content}\n\`\`\``, { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(msg.chat.id, 'Файл не найден');
+    }
+});
+
 app.post('/api/rental-ended', (req, res) => {
     const { telegramId, carName, endDate } = req.body;
     if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
