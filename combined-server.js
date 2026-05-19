@@ -194,23 +194,9 @@ bot.onText(/\/status/, (msg) => {
     const chatId = msg.chat.id;
     const subscription = readSubscription();
     let message;
-    if (subscription.isActive && subscription.expiryDate) {
-        const expiry = new Date(subscription.expiryDate);
-        const now = new Date();
-        const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-        message = `
-💎 **Статус подписки: АКТИВЕН** ✅
-
-📅 Окончание: ${formatDateTime(subscription.expiryDate)}
-📊 Осталось дней: ${daysLeft > 0 ? daysLeft : 0}
-        `;
-    } else {
-        message = `
-❌ **Подписка неактивна**
-
-💎 Оплати подписку: /pay
-        `;
-    }
+    // Всегда показываем, что подписка активна
+message = ` **Статус подписки: АКТИВЕН** ✅`;
+bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
 
@@ -218,17 +204,6 @@ bot.onText(/\/rentals/, (msg) => {
     const chatId = msg.chat.id;
     const subscription = readSubscription();
     const now = new Date();
-    
-    // Проверка подписки
-    if (!subscription.isActive || !subscription.expiryDate || new Date(subscription.expiryDate) <= now) {
-        bot.sendMessage(chatId, `
-❌ **Доступ ограничен!**
-
-💎 Ваша подписка истекла.
-Оплачивайте через: /pay
-        `, { parse_mode: 'Markdown' });
-        return;
-    }
     
     // Если подписка активна — показываем аренды
     const data = readRentData();
