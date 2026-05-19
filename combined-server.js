@@ -196,6 +196,31 @@ bot.onText(/\/generatekey/, (msg) => {
     bot.sendMessage(msg.chat.id, `✅ Новый ключ: \`${key}\``, { parse_mode: 'Markdown' });
 });
 
+// Временная команда для добавления существующих ключей (только админ)
+bot.onText(/\/addkey (.+)/, (msg, match) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const key = match[1].trim();
+    const keys = readKeys();
+    
+    if (keys.find(k => k.key === key)) {
+        bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
+        return;
+    }
+    
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30); // срок 30 дней от сегодня
+    keys.push({
+        key: key,
+        used: false,
+        activatedBy: null,
+        expiryDate: expiryDate.toISOString(),
+        createdAt: new Date().toISOString(),
+        telegramId: null
+    });
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
+});
+
 bot.onText(/\/addpayment/, (msg) => {
     if (String(msg.chat.id) !== String(ADMIN_ID)) return;
     const data = readPayments();
