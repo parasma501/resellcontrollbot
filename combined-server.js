@@ -146,6 +146,25 @@ bot.onText(/\/addkey (.+)/, (msg, match) => {
     bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
 });
 
+// ========== ДИАГНОСТИКА АРЕНД ==========
+bot.onText(/\/showrentdata/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const data = readRentData();
+    const rentals = data.rentals || [];
+    if (!rentals.length) {
+        bot.sendMessage(msg.chat.id, '📭 Нет аренд в rent-data.json');
+        return;
+    }
+    const info = rentals.map(r => `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified || false}`).join('\n');
+    bot.sendMessage(msg.chat.id, `📋 Аренды:\n${info}`);
+});
+
+bot.onText(/\/forcecheck/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    checkRentalsAndNotify();
+    bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
+});
+
 app.post('/api/add-rental', (req, res) => {
     const { key, propertyName, start, end, total } = req.body;
     console.log('/api/add-rental:', key, propertyName);
