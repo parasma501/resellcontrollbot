@@ -296,6 +296,37 @@ function checkRentalsAndNotify() {
 setInterval(checkRentalsAndNotify, 5 * 60 * 1000);
 checkRentalsAndNotify();
 
+// Добавление новой аренды (из приложения)
+app.post('/api/add-rental', (req, res) => {
+    const { key, propertyName, start, end, total } = req.body;
+    if (!key || !propertyName || !start || !end) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    // Находим ключ, чтобы получить telegramId
+    const keys = readKeys();
+    const keyRecord = keys.find(k => k.key === key);
+    if (!keyRecord) {
+        return res.status(404).json({ error: 'Key not found' });
+    }
+    const telegramId = keyRecord.telegramId || null; // может быть null, если не сохранили
+
+    const data = readRentData();
+    const newRental = {
+        id: Date.now(),
+        propertyName,
+        start,
+        end,
+        total: total || 0,
+        telegramId,      // привязываем к пользователю
+        key              // также сохраняем ключ для истории
+    };
+    if (!data.rentals) data.rentals = [];
+    data.rentals.push(newRental);
+    writeRentData(data);
+    console.log(`➕ Добавлена аренда: ${propertyName}, telegramId=${telegramId}`);
+    res.json({ ok: true, rentalId: newRental.id });
+});
+
 // ========== ТЕСТОВЫЕ МАРШРУТЫ ==========
 app.get('/ping', (req, res) => res.send('pong'));
 app.get('/', (req, res) => res.send('🤖 Resell Control Bot is alive!'));
