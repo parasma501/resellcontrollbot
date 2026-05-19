@@ -318,6 +318,21 @@ bot.onText(/\/migratekeys/, (msg) => {
     }
 });
 
+// Сброс статуса всех ключей на used: false (только для миграции)
+bot.onText(/\/resetkeys/, (msg) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const keys = readKeys();
+    let changed = 0;
+    for (const k of keys) {
+        if (k.used === true) {
+            k.used = false;
+            changed++;
+        }
+    }
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Сброшено ${changed} ключей. Теперь их можно активировать заново с Telegram ID.`);
+});
+
 app.post('/api/rental-ended', (req, res) => {
     const { telegramId, carName, endDate } = req.body;
     if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
