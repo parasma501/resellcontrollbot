@@ -181,6 +181,12 @@ bot.onText(/\/clearoldrentals/, (msg) => {
     bot.sendMessage(msg.chat.id, `🧹 Очищено ${removed} завершённых аренд. Осталось активных: ${data.rentals.length}.`);
 });
 
+bot.onText(/\/clearallrentals/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    writeRentData({ rentals: [] });
+    bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
+});
+
 // ========== ДИАГНОСТИКА АРЕНД ==========
 bot.onText(/\/showrentdata/, (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
