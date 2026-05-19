@@ -240,24 +240,4 @@ app.post('/api/add-rental', (req, res) => {
     res.json({ ok: true, rentalId: newRental.id });
 });
 
-// Периодическая проверка завершённых аренд
-setInterval(() => {
-    const data = readRentData();
-    const now = new Date();
-    let changed = false;
-    data.rentals.forEach(rental => {
-        if (!rental.notified && new Date(rental.end) <= now) {
-            const msg = `🔔 Машина "${rental.propertyName}" вернулась из аренды (${new Date(rental.end).toLocaleString()})`;
-            if (rental.telegramId) {
-                bot.sendMessage(rental.telegramId, msg).catch(e => console.error(e));
-            } else {
-                bot.sendMessage(ADMIN_ID, msg + ' (нет telegramId)');
-            }
-            rental.notified = true;
-            changed = true;
-        }
-    });
-    if (changed) writeRentData(data);
-}, 60 * 1000); // каждую минуту
-
 app.listen(PORT, () => console.log(`Сервер на порту ${PORT}`));
