@@ -58,6 +58,28 @@ function saveUser(chatId) {
 }
 function formatDate(iso) { return new Date(iso).toLocaleString('ru-RU'); }
 
+// Убедитесь, что функция checkRentalsAndNotify корректно отправляет уведомления
+// (она уже есть в вашем коде, но для уверенности можно заменить на эту версию)
+function checkRentalsAndNotify() {
+    const data = readRentData();
+    const now = new Date();
+    let changed = false;
+    (data.rentals || []).forEach(rental => {
+        if (!rental.notified && new Date(rental.end) <= now) {
+            const message = `🔔 Машина "${rental.propertyName}" вернулась из аренды (${new Date(rental.end).toLocaleString()})`;
+            if (rental.telegramId) {
+                bot.sendMessage(rental.telegramId, message).catch(e => console.error(e));
+                console.log(`Уведомление отправлено пользователю ${rental.telegramId}`);
+            } else {
+                bot.sendMessage(ADMIN_ID, message + ' (у пользователя нет telegramId)').catch(e => console.error(e));
+            }
+            rental.notified = true;
+            changed = true;
+        }
+    });
+    if (changed) writeRentData(data);
+}
+
 // ========== КОМАНДЫ БОТА ==========
 const commands = ['/start', '/help', '/status', '/rentals', '/payments', '/clue', '/pay'];
 commands.forEach(cmd => {
