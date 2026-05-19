@@ -1128,7 +1128,7 @@ function calculateDealTotal(){
   const total = hours * pricePerHour;
   document.getElementById('dealTotal').value = formatMoney(total);
 }
-function confirmDeal(){
+function confirmDeal() {
     if(!currentProperty) return;
     const start = document.getElementById('dealStart').value;
     const end = document.getElementById('dealEnd').value;
@@ -1153,8 +1153,13 @@ function confirmDeal(){
     };
     
     rentOperations.unshift(operation);
-    saveRentOperations();  // ← УБЕДИСЬ, ЧТО ЭТА СТРОКА ЕСТЬ!
+    saveRentOperations();
     updateRentStats();
+    
+    // ======== ВЫЗОВ ДЛЯ ОТПРАВКИ НА СЕРВЕР ========
+    addRentalToServer(operation.propertyName, operation.start, operation.end, operation.total);
+    // =============================================
+    
     closeDealModal();
     
     const { ipcRenderer } = require('electron');
@@ -3492,27 +3497,38 @@ function hideActivationModal() {
     }
 }
 
-// Функция активации (пример)
+// Открыть бота для получения Telegram ID
+function openTelegramIdBot(event) {
+    event.preventDefault();
+    const { shell } = require('electron');
+    shell.openExternal('https://t.me/userinfobot');
+}
+
+// Активация ключа с Telegram ID
 async function activateKey() {
     const keyInput = document.getElementById('activationKeyInput');
+    const telegramIdInput = document.getElementById('telegramIdInput');
     if (!keyInput) {
-        alert('Поле ввода не найдено');
+        alert('Поле ввода ключа не найдено');
         return;
     }
     const key = keyInput.value.trim();
+    const telegramId = telegramIdInput ? telegramIdInput.value.trim() : '';
     if (!key) return alert('Введите ключ');
+    if (!telegramId) return alert('Введите ваш Telegram ID (число)');
 
     try {
         const response = await fetch(`${API_BASE}/checkkey`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
+            body: JSON.stringify({ key, telegramId })
         });
         const data = await response.json();
 
         if (data.valid) {
             localStorage.setItem('subscription_expiry', data.expiryDate);
             localStorage.setItem('subscription_key', key);
+            localStorage.setItem('telegramId', telegramId);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
             const modal = document.getElementById('activationModal');
             if (modal) modal.style.display = 'none';
