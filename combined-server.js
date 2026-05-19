@@ -81,7 +81,7 @@ function checkRentalsAndNotify() {
 }
 
 // ========== КОМАНДЫ БОТА ==========
-const commands = ['/start', '/help', '/status', '/rentals', '/payments', '/clue', '/pay'];
+const commands = ['/start', '/help', '/status', '/payments', '/clue', '/pay'];
 commands.forEach(cmd => {
     bot.onText(new RegExp(cmd), (msg) => {
         saveUser(msg.chat.id);
