@@ -251,10 +251,51 @@
 </div>
 
   <div class="screen" id="settingsScreen">
-    <div class="dev-screen">
-      <div class="dev-screen-text">В разработке</div>
+  <div class="panel" style="padding: 16px; overflow-y: auto; height: 100%;">
+    <h2 class="section-title">Настройки</h2>
+    <p class="section-sub">Управление звуками, историей BP и сигналами таймеров.</p>
+
+    <!-- Секция: BP -->
+    <div class="settings-card">
+      <h3 class="settings-card-title">Фарм BP</h3>
+      <div class="settings-row">
+        <span>Записывать выполненные задания в "Часто выполняемые"</span>
+        <label class="switch">
+          <input type="checkbox" id="bpHistoryToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Секция: Звук и сигналы -->
+    <div class="settings-card">
+      <h3 class="settings-card-title">Таймеры и звуки</h3>
+      <div class="settings-row">
+        <span>Количество повторов сигнала (1–99)</span>
+        <input class="settings-input" id="beepRepeatsInput" type="number" min="1" max="99" value="3">
+        <span>раз</span>
+      </div>
+      <div class="settings-row">
+        <span>Звук таймера</span>
+        <select id="timerSoundSelect" class="styled-select">
+  <option value="default">Стандартный (синусоида)</option>
+  <option value="apex.mp3">Apex</option>
+  <option value="bulletin.mp3">Bulletin</option>
+  <option value="chimes.mp3">Chimes</option>
+  <option value="circuit.mp3">Circuit</option>
+  <option value="constellation.mp3">Constellation</option>
+  <option value="fmd_sound.mp3">FMD Sound</option>
+  <option value="hillside.mp3">Hillside</option>
+  <option value="illuminate.mp3">Illuminate</option>
+  <option value="radar.mp3">Radar</option>
+  <option value="custom">Свой звук...</option>
+</select>
+        <input type="file" id="customSoundFile" accept="audio/*" style="display: none;">
+        <button id="clearCustomSoundBtn" class="btn btn-dark" style="display: none;">Сбросить свой звук</button>
+      </div>
     </div>
   </div>
+</div>
   <div class="screen active" id="resellScreen">
     <div class="resell-layout">
       <div class="panel" style="display:flex;flex-direction:column;min-height:0">
@@ -323,7 +364,23 @@
         <h2 class="section-title" style="margin-bottom:6px">Farm BP</h2>
         <p class="section-sub" style="margin-bottom:0">Закрепляй нужные пункты, а частые действия программа поднимет выше сама.</p>
       </div>
-      <div class="bp-total">Всего BP<strong id="bpTotal">0</strong></div>
+      <div class="bp-stats-row">
+    <!-- Мои BP -->
+    <div class="bp-total my-bp-total">
+      <span class="stat-label">Мои BP</span>
+      <input type="number" id="myBpInput" value="0" step="1" min="0" class="my-bp-input">
+    </div>
+    <!-- Всего BP (системный) -->
+    <div class="bp-total">
+      <span class="stat-label">Всего BP</span>
+      <strong id="bpTotal">0</strong>
+    </div>
+    <!-- Итого BP (сумма) -->
+    <div class="bp-total total-bp">
+      <span class="stat-label">Итого BP</span>
+      <strong id="totalBpSum">0</strong>
+    </div>
+  </div>
     </div>
 
     <div class="bp-toolbar">
@@ -372,11 +429,7 @@
     <div class="panel-card" id="customTimerBlock">
       <h4 class="card-title">Кастомный таймер</h4>
       <div class="card-sub">Задай своё время прямо в больших цифрах, запусти отсчёт и настрой количество сигналов окончания так, как удобно тебе.</div>
-      <div class="settings-row">
-        <span>Повтор сигнала</span>
-        <input class="settings-input" id="beepRepeatsInput" type="number" min="1" max="10" value="3" onchange="saveBeepRepeats()">
-        <span>раз</span>
-      </div>
+      
 
       <input id="customTimerName" class="custom-timer-name" placeholder="Название таймера">
 
@@ -629,45 +682,62 @@
 <div class="autocomplete-list" id="autocompleteList"></div>
 </div>
 
-<script src="./renderer.js"></script>
-</body>
-</html>
-
 <button id="scrollToTopBtnRent" class="scroll-to-top-btn" onclick="scrollToTopRent()" title="Наверх">
   ↑
 </button>
 
-<div class="modal" id="rentHistoryModal">
-  <div class="modal-content wide" id="rentHistoryModalContent" tabindex="0" style="border: 2px solid red;"></div>
-<div class="modal-content wide" id="rentHistoryModalContent" tabindex="0">
-<button class="modal-close" onclick="closeRentHistoryModal()">×</button>
-<h3 style="margin:0 0 12px">История аренды</h3>
 
-<!-- Таблица аренд (центр) -->
-<div class="operations-head" style="margin-bottom:8px">
-<div>Машина</div>
-<div>Начало</div>
-<div>Конец</div>
-<div>Сумма</div>
-<div></div>
+<div id="rentHistoryModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 900px; max-height: 80vh; display: flex; flex-direction: column;">
+        <!-- Заголовок -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #2a3040;">
+            <h2 style="margin: 0; font-size: 1.5rem;">История аренды</h2>
+            <button class="close-modal" onclick="closeRentHistoryModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #ff5555; opacity: 0.8;">&times;</button>
+        </div>
+        <!-- Таблица -->
+        <div style="flex: 1; overflow-y: auto; padding: 0 20px;">
+            <table class="rent-history-table" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid #2a3040;">
+                        <th style="text-align: left; padding: 12px 8px;">Машина</th>
+                        <th style="text-align: left; padding: 12px 8px;">Начало – Конец</th>
+                        <th style="text-align: right; padding: 12px 8px;">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody id="rentHistoryTableBody"></tbody>
+            </table>
+        </div>
+        <!-- Фильтры, итог и сброс в одной строке -->
+        <div style="padding: 15px 20px; border-top: 1px solid #2a3040; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <!-- Левая группа: кнопки фильтров и селекторы месяца/года -->
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button class="filter-chip active" data-filter="all" onclick="setRentHistoryFilter('all')">Все время</button>
+                <button class="filter-chip" data-filter="today" onclick="setRentHistoryFilter('today')">Сегодня</button>
+                <button class="filter-chip" data-filter="week" onclick="setRentHistoryFilter('week')">Неделя</button>
+                <button class="filter-chip" data-filter="month" onclick="setRentHistoryFilter('month')">Месяц</button>
+                <div id="rentHistoryMonthPeriodControls" style="display: none;">
+                    <select id="rentHistoryMonthSelect" onchange="changeRentHistoryMonth()"></select>
+                    <select id="rentHistoryYearSelect" onchange="changeRentHistoryMonth()"></select>
+                </div>
+            </div>
+            <!-- Правая группа: итог и кнопка сброса -->
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="font-weight: bold;">Итого: <span id="rentHistoryTotal">0</span> ₽</span>
+                <button id="clearHistoryBtn" class="danger-btn">Сброс истории</button>
+            </div>
+        </div>
+    </div>
 </div>
-<div class="operations-body" id="rentHistoryTable" style="min-height: 200px; background: #2a3040; padding: 10px;"></div>
-
-<!-- Нижняя панель: фильтры слева, сумма справа -->
-<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-<div class="filter-row">
-<button class="filter-chip active" data-filter="all" onclick="setRentHistoryFilter('all')">Все время</button>
-<button class="filter-chip" data-filter="today" onclick="setRentHistoryFilter('today')">Сегодня</button>
-<button class="filter-chip" data-filter="week" onclick="setRentHistoryFilter('week')">Неделя</button>
-<button class="filter-chip" data-filter="month" onclick="setRentHistoryFilter('month')">Месяц</button>
-<div class="dates-row" id="rentHistoryMonthControls" style="display:none;">
-<select id="rentHistoryMonthSelect" onchange="changeRentHistoryMonth()"></select>
-<select id="rentHistoryYearSelect" onchange="changeRentHistoryMonth()"></select>
-</div>
-</div>
-<div class="stat-mini"><strong>Всего заработано</strong><span id="rentHistoryTotal">0$</span></div>
-</div>
-</div>
+<!-- Кастомная модалка подтверждения удаления -->
+<div id="customConfirmModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; justify-content: center; align-items: center;">
+    <div style="background: #1a1f2e; border-radius: 12px; max-width: 350px; width: 90%; padding: 20px; text-align: center; border: 1px solid #2a3040;">
+        <h3 style="margin: 0 0 15px;">Подтверждение удаления</h3>
+        <p id="confirmMessage" style="margin: 0 0 20px;">Вы уверены?</p>
+        <div style="display: flex; justify-content: center; gap: 15px;">
+            <button id="confirmYes" style="background: #dc3545; border: none; padding: 8px 16px; border-radius: 6px; color: white; cursor: pointer;">Удалить</button>
+            <button id="confirmNo" style="background: #2a3040; border: none; padding: 8px 16px; border-radius: 6px; color: white; cursor: pointer;">Отмена</button>
+        </div>
+    </div>
 </div>
 
 <div class="modal" id="endRentalModal">
