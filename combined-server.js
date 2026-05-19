@@ -187,6 +187,18 @@ bot.onText(/\/forcecheck/, (msg) => {
     bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
 });
 
+app.post('/api/rental-ended', (req, res) => {
+    const { telegramId, carName, endDate } = req.body;
+    if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
+    const message = `🚗 Машина "${carName}" вернулась из аренды (${new Date(endDate).toLocaleString()}).`;
+    bot.sendMessage(telegramId, message)
+        .then(() => res.json({ ok: true }))
+        .catch(err => {
+            console.error('Ошибка отправки:', err);
+            res.status(500).json({ error: err.message });
+        });
+});
+
 app.post('/api/add-rental', (req, res) => {
     const { key, propertyName, start, end, total } = req.body;
     console.log('/api/add-rental:', key, propertyName);
