@@ -122,6 +122,30 @@ app.post('/checkkey', (req, res) => {
     res.json({ valid: true, expiryDate: found.expiryDate });
 });
 
+bot.onText(/\/addkey (.+)/, (msg, match) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const key = match[1].trim();
+    const keys = readKeys();
+    
+    if (keys.find(k => k.key === key)) {
+        bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
+        return;
+    }
+    
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30); // срок 30 дней от сегодня
+    keys.push({
+        key: key,
+        used: false,
+        activatedBy: null,
+        expiryDate: expiryDate.toISOString(),
+        createdAt: new Date().toISOString(),
+        telegramId: null
+    });
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
+});
+
 app.post('/api/add-rental', (req, res) => {
     const { key, propertyName, start, end, total } = req.body;
     console.log('/api/add-rental:', key, propertyName);
