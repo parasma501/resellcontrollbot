@@ -296,6 +296,28 @@ bot.onText(/\/showrawkeys/, (msg) => {
     }
 });
 
+// Миграция keys.json из { keys: [] } в []
+bot.onText(/\/migratekeys/, (msg) => {
+    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+    const filePath = path.join(DATA_DIR, 'keys.json');
+    try {
+        if (fs.existsSync(filePath)) {
+            let data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            if (data && !Array.isArray(data) && Array.isArray(data.keys)) {
+                const oldKeys = data.keys;
+                fs.writeFileSync(filePath, JSON.stringify(oldKeys, null, 2));
+                bot.sendMessage(msg.chat.id, `✅ Миграция выполнена! Перенесено ${oldKeys.length} ключей.`);
+            } else {
+                bot.sendMessage(msg.chat.id, `❌ Файл уже в нужном формате или повреждён.`);
+            }
+        } else {
+            bot.sendMessage(msg.chat.id, `❌ Файл не найден.`);
+        }
+    } catch (err) {
+        bot.sendMessage(msg.chat.id, `❌ Ошибка: ${err.message}`);
+    }
+});
+
 app.post('/api/rental-ended', (req, res) => {
     const { telegramId, carName, endDate } = req.body;
     if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
