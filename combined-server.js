@@ -213,7 +213,17 @@ app.post('/api/rental-ended', (req, res) => {
     bot.sendMessage(telegramId, message)
         .then(() => res.json({ ok: true }))
         .catch(err => {
-            console.error('Ошибка отправки:', err);
+            console.error(`Ошибка отправки пользователю ${telegramId}:`, err.message);
+            if (err.message.includes('chat not found')) {
+                // Опционально: удалить невалидный telegramId из ключа в keys.json
+                const keys = readKeys();
+                const keyRecord = keys.find(k => k.telegramId == telegramId);
+                if (keyRecord) {
+                    keyRecord.telegramId = null;
+                    writeKeys(keys);
+                    console.log(`Удалён невалидный telegramId ${telegramId} из ключа ${keyRecord.key}`);
+                }
+            }
             res.status(500).json({ error: err.message });
         });
 });
