@@ -3,10 +3,22 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// Принудительно удаляем webhook при запуске, чтобы избежать конфликта 409
+// ======== КОНФИГУРАЦИЯ (ДО СОЗДАНИЯ БОТА) ========
+const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
+const ADMIN_ID = process.env.ADMIN_ID || '705565283';
+const PORT = process.env.PORT || 3000;
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
+
+// ======== ИНИЦИАЛИЗАЦИЯ БОТА (ОДИН РАЗ) ========
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+// Удаляем возможный webhook, чтобы избежать конфликта 409
 bot.deleteWebHook({ drop_pending_updates: true }).catch(() => {});
 
+console.log('🤖 Бот запущен!');
+
+// ======== EXPRESS ========
 const app = express();
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -17,16 +29,6 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
-const ADMIN_ID = process.env.ADMIN_ID || '705565283';
-const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
-
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-console.log('🤖 Бот запущен!');
 
 // ========== ФУНКЦИИ РАБОТЫ С ДАННЫМИ ==========
 function readRentData() {
@@ -62,8 +64,7 @@ function saveUser(chatId) {
 }
 function formatDate(iso) { return new Date(iso).toLocaleString('ru-RU'); }
 
-// Убедитесь, что функция checkRentalsAndNotify корректно отправляет уведомления
-// (она уже есть в вашем коде, но для уверенности можно заменить на эту версию)
+// ========== ПРОВЕРКА АРЕНД (если нужна) ==========
 function checkRentalsAndNotify() {
     const data = readRentData();
     const now = new Date();
@@ -90,18 +91,11 @@ commands.forEach(cmd => {
     bot.onText(new RegExp(cmd), (msg) => {
         saveUser(msg.chat.id);
         if (cmd === '/start') {
-            bot.sendMessage(msg.chat.id, `👋 Добро пожаловать! Команды: /help, /clue, /rentals, /payments`);
+            bot.sendMessage(msg.chat.id, `👋 Добро пожаловать! Команды: /help, /clue, /payments`);
         } else if (cmd === '/help') {
-            bot.sendMessage(msg.chat.id, `/start - приветствие\n/clue - как получить ключ\n/rentals - активные аренды\n/payments - платежи\n/generatekey (админ)`);
+            bot.sendMessage(msg.chat.id, `/start - приветствие\n/clue - как получить ключ\n/payments - платежи\n/generatekey (админ)`);
         } else if (cmd === '/status') {
             bot.sendMessage(msg.chat.id, `✅ Подписка активна (проверка через приложение).`);
-        } else if (cmd === '/rentals') {
-            const data = readRentData();
-            const active = data.rentals.filter(r => new Date(r.end) > new Date());
-            if (!active.length) return bot.sendMessage(msg.chat.id, '📭 Активных аренд нет');
-            let text = '🚗 *Активные аренды:*\n';
-            active.forEach((r,i) => text += `${i+1}. ${r.propertyName} до ${formatDate(r.end)}\n`);
-            bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
         } else if (cmd === '/payments') {
             bot.sendMessage(msg.chat.id, '📜 История платежей: обратитесь к администратору.');
         } else if (cmd === '/clue') {
@@ -130,6 +124,83 @@ bot.onText(/\/showallkeys/, (msg) => {
     const list = keys.map(k => `${k.key} — used:${k.used}, истекает:${k.expiryDate ? new Date(k.expiryDate).toLocaleDateString() : 'нет'}, tgId:${k.telegramId || 'нет'}`).join('\n');
     bot.sendMessage(msg.chat.id, list);
 });
+bot.onText(/\/addkey (.+)/, (msg, match) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const key = match[1].trim();
+    const keys = readKeys();
+    if (keys.find(k => k.key === key)) {
+        bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
+        return;
+    }
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+    keys.push({
+        key, used: false, activatedBy: null,
+        expiryDate: expiryDate.toISOString(),
+        createdAt: new Date().toISOString(),
+        telegramId: null
+    });
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
+});
+bot.onText(/\/clearoldrentals/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const data = readRentData();
+    const now = new Date();
+    const originalCount = data.rentals?.length || 0;
+    data.rentals = (data.rentals || []).filter(r => new Date(r.end) > now);
+    writeRentData(data);
+    const removed = originalCount - data.rentals.length;
+    bot.sendMessage(msg.chat.id, `🧹 Очищено ${removed} завершённых аренд. Осталось активных: ${data.rentals.length}.`);
+});
+bot.onText(/\/clearallrentals/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    writeRentData({ rentals: [] });
+    bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
+});
+bot.onText(/\/webhookinfo/, async (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) return;
+    try {
+        const webhookInfo = await bot.getWebHookInfo();
+        const infoText = `
+📡 *Информация о Webhook:*
+• URL: \`${webhookInfo.url || 'Не установлен'}\`
+• Используется polling: \`${webhookInfo.url ? 'Нет' : 'Да'}\`
+• Ожидающие обновления: \`${webhookInfo.pending_update_count || 0}\`
+• Последняя ошибка: \`${webhookInfo.last_error_message || 'Нет'}\`
+        `;
+        bot.sendMessage(msg.chat.id, infoText, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Ошибка получения информации о webhook:', error);
+        bot.sendMessage(msg.chat.id, '❌ Не удалось получить информацию о webhook.');
+    }
+});
+bot.onText(/\/delwebhook/, async (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) return;
+    try {
+        await bot.deleteWebHook({ drop_pending_updates: true });
+        bot.sendMessage(msg.chat.id, '✅ Webhook успешно удалён. Бот переключён на polling.');
+    } catch (error) {
+        console.error('Ошибка удаления webhook:', error);
+        bot.sendMessage(msg.chat.id, '❌ Не удалось удалить webhook.');
+    }
+});
+bot.onText(/\/showrentdata/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const data = readRentData();
+    const rentals = data.rentals || [];
+    if (!rentals.length) {
+        bot.sendMessage(msg.chat.id, '📭 Нет аренд в rent-data.json');
+        return;
+    }
+    const info = rentals.map(r => `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified || false}`).join('\n');
+    bot.sendMessage(msg.chat.id, `📋 Аренды:\n${info}`);
+});
+bot.onText(/\/forcecheck/, (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    checkRentalsAndNotify();
+    bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
+});
 
 // ========== ЭНДПОИНТЫ ДЛЯ ПРИЛОЖЕНИЯ ==========
 app.post('/checkkey', (req, res) => {
@@ -148,103 +219,6 @@ app.post('/checkkey', (req, res) => {
     res.json({ valid: true, expiryDate: found.expiryDate });
 });
 
-bot.onText(/\/addkey (.+)/, (msg, match) => {
-    if (String(msg.chat.id) !== String(ADMIN_ID)) return;
-    const key = match[1].trim();
-    const keys = readKeys();
-    
-    if (keys.find(k => k.key === key)) {
-        bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
-        return;
-    }
-    
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 30); // срок 30 дней от сегодня
-    keys.push({
-        key: key,
-        used: false,
-        activatedBy: null,
-        expiryDate: expiryDate.toISOString(),
-        createdAt: new Date().toISOString(),
-        telegramId: null
-    });
-    writeKeys(keys);
-    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
-});
-
-// Админ-команда: очистка завершённых аренд
-bot.onText(/\/clearoldrentals/, (msg) => {
-    if (String(msg.chat.id) !== ADMIN_ID) return;
-    const data = readRentData();
-    const now = new Date();
-    const originalCount = data.rentals?.length || 0;
-    // Оставляем только те аренды, у которых дата окончания ещё не наступила
-    data.rentals = (data.rentals || []).filter(r => new Date(r.end) > now);
-    writeRentData(data);
-    const removed = originalCount - data.rentals.length;
-    bot.sendMessage(msg.chat.id, `🧹 Очищено ${removed} завершённых аренд. Осталось активных: ${data.rentals.length}.`);
-});
-
-bot.onText(/\/clearallrentals/, (msg) => {
-    if (String(msg.chat.id) !== ADMIN_ID) return;
-    writeRentData({ rentals: [] });
-    bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
-});
-
-// Команда для диагностики — показывает текущий статус webhook
-bot.onText(/\/webhookinfo/, async (msg) => {
-    // Команда доступна только администратору
-    if (msg.chat.id.toString() !== ADMIN_ID) return;
-
-    try {
-        // Получаем информацию о webhook через API библиотеки
-        const webhookInfo = await bot.getWebHookInfo();
-        
-        // Форматируем полученный объект в читаемый вид
-        const infoText = `
-📡 *Информация о Webhook:*
-• URL: \`${webhookInfo.url || 'Не установлен'}\`
-• Используется polling: \`${webhookInfo.url ? 'Нет' : 'Да'}\`
-• Ожидающие обновления: \`${webhookInfo.pending_update_count || 0}\`
-• Последняя ошибка: \`${webhookInfo.last_error_message || 'Нет'}\`
-        `;
-        bot.sendMessage(msg.chat.id, infoText, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Ошибка получения информации о webhook:', error);
-        bot.sendMessage(msg.chat.id, '❌ Не удалось получить информацию о webhook.');
-    }
-});
-
-bot.onText(/\/delwebhook/, async (msg) => {
-    if (msg.chat.id.toString() !== ADMIN_ID) return;
-    try {
-        await bot.deleteWebHook({ drop_pending_updates: true });
-        bot.sendMessage(msg.chat.id, '✅ Webhook успешно удалён. Бот переключён на polling.');
-    } catch (error) {
-        console.error('Ошибка удаления webhook:', error);
-        bot.sendMessage(msg.chat.id, '❌ Не удалось удалить webhook.');
-    }
-});
-
-// ========== ДИАГНОСТИКА АРЕНД ==========
-bot.onText(/\/showrentdata/, (msg) => {
-    if (String(msg.chat.id) !== ADMIN_ID) return;
-    const data = readRentData();
-    const rentals = data.rentals || [];
-    if (!rentals.length) {
-        bot.sendMessage(msg.chat.id, '📭 Нет аренд в rent-data.json');
-        return;
-    }
-    const info = rentals.map(r => `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified || false}`).join('\n');
-    bot.sendMessage(msg.chat.id, `📋 Аренды:\n${info}`);
-});
-
-bot.onText(/\/forcecheck/, (msg) => {
-    if (String(msg.chat.id) !== ADMIN_ID) return;
-    checkRentalsAndNotify();
-    bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
-});
-
 app.post('/api/rental-ended', (req, res) => {
     const { telegramId, carName, endDate } = req.body;
     if (!telegramId) return res.status(400).json({ error: 'telegramId required' });
@@ -254,7 +228,6 @@ app.post('/api/rental-ended', (req, res) => {
         .catch(err => {
             console.error(`Ошибка отправки пользователю ${telegramId}:`, err.message);
             if (err.message.includes('chat not found')) {
-                // Опционально: удалить невалидный telegramId из ключа в keys.json
                 const keys = readKeys();
                 const keyRecord = keys.find(k => k.telegramId == telegramId);
                 if (keyRecord) {
@@ -265,6 +238,16 @@ app.post('/api/rental-ended', (req, res) => {
             }
             res.status(500).json({ error: err.message });
         });
+});
+
+app.post('/update-telegram-id', (req, res) => {
+    const { key, telegramId } = req.body;
+    const keys = readKeys();
+    const found = keys.find(k => k.key === key);
+    if (!found) return res.status(404).json({ error: 'Key not found' });
+    found.telegramId = telegramId;
+    writeKeys(keys);
+    res.json({ ok: true });
 });
 
 app.post('/api/add-rental', (req, res) => {
