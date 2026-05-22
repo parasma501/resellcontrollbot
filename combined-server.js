@@ -3,6 +3,10 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// Принудительно удаляем webhook при запуске, чтобы избежать конфликта 409
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+bot.deleteWebHook({ drop_pending_updates: true }).catch(() => {});
+
 const app = express();
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -185,6 +189,41 @@ bot.onText(/\/clearallrentals/, (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     writeRentData({ rentals: [] });
     bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
+});
+
+// Команда для диагностики — показывает текущий статус webhook
+bot.onText(/\/webhookinfo/, async (msg) => {
+    // Команда доступна только администратору
+    if (msg.chat.id.toString() !== ADMIN_ID) return;
+
+    try {
+        // Получаем информацию о webhook через API библиотеки
+        const webhookInfo = await bot.getWebHookInfo();
+        
+        // Форматируем полученный объект в читаемый вид
+        const infoText = `
+📡 *Информация о Webhook:*
+• URL: \`${webhookInfo.url || 'Не установлен'}\`
+• Используется polling: \`${webhookInfo.url ? 'Нет' : 'Да'}\`
+• Ожидающие обновления: \`${webhookInfo.pending_update_count || 0}\`
+• Последняя ошибка: \`${webhookInfo.last_error_message || 'Нет'}\`
+        `;
+        bot.sendMessage(msg.chat.id, infoText, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Ошибка получения информации о webhook:', error);
+        bot.sendMessage(msg.chat.id, '❌ Не удалось получить информацию о webhook.');
+    }
+});
+
+bot.onText(/\/delwebhook/, async (msg) => {
+    if (msg.chat.id.toString() !== ADMIN_ID) return;
+    try {
+        await bot.deleteWebHook({ drop_pending_updates: true });
+        bot.sendMessage(msg.chat.id, '✅ Webhook успешно удалён. Бот переключён на polling.');
+    } catch (error) {
+        console.error('Ошибка удаления webhook:', error);
+        bot.sendMessage(msg.chat.id, '❌ Не удалось удалить webhook.');
+    }
 });
 
 // ========== ДИАГНОСТИКА АРЕНД ==========
