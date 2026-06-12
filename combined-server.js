@@ -12,7 +12,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
 
 // ======== ИНИЦИАЛИЗАЦИЯ БОТА (ОДИН РАЗ) ========
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN);
 // Удаляем возможный webhook, чтобы избежать конфликта 409
 bot.deleteWebHook({ drop_pending_updates: true }).catch(() => {});
 
@@ -270,6 +270,20 @@ app.post('/api/add-rental', (req, res) => {
     data.rentals.push(newRental);
     writeRentData(data);
     res.json({ ok: true, rentalId: newRental.id });
+});
+
+app.post('/webhook', (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+    console.log(`Сервер запущен на порту ${PORT}`);
+    const webhookUrl = `https://resellcontrollbot.onrender.com/webhook`;
+    await bot.deleteWebHook(); // удаляем старый вебхук (если был)
+    await bot.setWebHook(webhookUrl);
+    console.log(`Webhook установлен на ${webhookUrl}`);
 });
 
 app.listen(PORT, () => console.log(`Сервер на порту ${PORT}`));
