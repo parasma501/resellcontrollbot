@@ -6,7 +6,7 @@ const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
 const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update-pro/releases';
 const CURRENT_VERSION = pkg.version;
-const API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
+const API_BASE = 'https://resellcontrol1bot.onrender.com';
 const fs = require('fs');
 const path = require('path');
 
