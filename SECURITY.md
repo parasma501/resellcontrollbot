@@ -1,87 +1,463 @@
-# Security and deployment
+# Безопасность и развёртывание проекта
 
-## Render environment variables
+Этот документ предназначен для владельца репозитория и описывает все действия, необходимые после принятия Pull Request.
 
-Configure these values in Render Dashboard under **Environment**. Never commit them:
+## 1. Что было изменено
 
-```text
-BOT_TOKEN=<new Telegram bot token>
-ADMIN_ID=<Telegram administrator ID>
-SESSION_SECRET=<at least 32 random characters>
-CORS_ORIGINS=null
-DATA_DIR=/var/data
+В проекте реализованы следующие меры безопасности:
+
+1. Токены Telegram больше не хранятся в исходном коде.
+2. Ключи подписки хранятся на сервере в виде SHA-256-хешей.
+3. После активации сервер выдаёт подписанный session-токен с ограниченным сроком действия.
+4. Защищённые API требуют заголовок `Authorization: Bearer <session-токен>`.
+5. Изменение даты подписки в `localStorage` больше не даёт доступ к серверным функциям.
+6. Session-токен desktop-приложения хранится через Electron `safeStorage`.
+7. Платёжные webhook требуют криптографическую HMAC-подпись.
+8. Добавлены ограничения частоты запросов и проверка входных данных.
+9. Рабочие JSON-файлы с ключами, платежами и арендами исключены из Git.
+10. Electron Renderer больше не имеет прямого доступа к Node.js и файловой системе.
+11. Добавлены автоматические тесты, проверка секретов и `npm audit` в GitHub Actions.
+
+## 2. Действия сразу после принятия Pull Request
+
+### Шаг 1. Отозвать старые Telegram-токены
+
+Старые токены ранее находились в публичной истории Git. Простого удаления из текущих файлов недостаточно.
+
+Для каждого бота:
+
+1. Откройте Telegram.
+2. Откройте чат с `@BotFather`.
+3. Отправьте команду `/mybots`.
+4. Выберите нужного бота.
+5. Откройте раздел **API Token**.
+6. Нажмите **Revoke current token**.
+7. Получите новый токен.
+8. Не отправляйте новый токен в Telegram-чатах, Discord или GitHub.
+
+Новые токены нужно сохранить только в переменных окружения Render.
+
+### Шаг 2. Получить последнюю версию проекта
+
+Если проект уже клонирован на компьютере:
+
+```powershell
+git switch main
+git pull origin main
+npm ci
 ```
 
-Generate a session secret with:
+Если проект ещё не клонирован:
+
+```powershell
+git clone https://github.com/parasma501/resellcontrollbot.git
+cd resellcontrollbot
+npm ci
+```
+
+## 3. Настройка основного сервиса на Render
+
+Основной сервис запускает Telegram-бота и API подписки.
+
+### Шаг 1. Открыть сервис
+
+1. Войдите в [Render Dashboard](https://dashboard.render.com/).
+2. Откройте существующий Web Service проекта.
+3. Перейдите в **Settings**.
+
+### Шаг 2. Указать команды сборки и запуска
+
+Установите следующие значения:
+
+```text
+Runtime: Node
+Build Command: npm ci --omit=dev
+Start Command: npm start
+Health Check Path: /status
+```
+
+Проект требует Node.js версии не ниже `22.12.0`. Если Render позволяет выбрать версию Node отдельно, укажите Node `22`.
+
+### Шаг 3. Создать постоянный диск
+
+Без постоянного диска Render может удалить ключи и аренды после нового деплоя или перезапуска контейнера.
+
+1. Откройте раздел **Disks** сервиса.
+2. Нажмите **Add Disk**.
+3. Укажите имя, например `resell-data`.
+4. В поле **Mount Path** укажите:
+
+```text
+/var/data
+```
+
+5. Выберите необходимый размер диска.
+6. Сохраните настройки.
+
+### Шаг 4. Создать секрет для подписанных сессий
+
+На компьютере с установленным Node.js выполните:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-`npm start` runs the main bot and subscription API.
-
-Attach a persistent Render Disk at `/var/data`. Without a disk or database, keys and rentals can disappear after a redeploy.
-
-Recommended Render settings:
+Команда выведет случайную строку. Пример формата:
 
 ```text
-Runtime: Node
-Node version: 22
-Build command: npm ci --omit=dev
-Start command: npm start
-Health check path: /status
+67b849d624cd03b9621ff9c30b4bdcb0a634a9b36ef971162ac09810da319c0b
 ```
 
-For the desktop application, set `API_BASE` to the public Render service URL before launching or packaging:
+Не используйте строку из примера. Сгенерируйте собственную.
 
-```powershell
-$env:API_BASE="https://your-service.onrender.com"
-npm run desktop
-```
+### Шаг 5. Добавить переменные окружения
 
-For a distributed build, replace `DEFAULT_API_BASE` in `preload.js` with the real Render URL before packaging.
-
-The optional payment webhook is a separate service and uses:
+1. В Render откройте вкладку **Environment**.
+2. Нажмите **Add Environment Variable**.
+3. Добавьте переменные:
 
 ```text
-PAYMENT_BOT_TOKEN=<new payment bot token>
-ADMIN_ID=<Telegram administrator ID>
-PAYMENT_WEBHOOK_SECRET=<at least 32 random characters>
+BOT_TOKEN=<новый токен основного Telegram-бота>
+ADMIN_ID=<Telegram ID администратора>
+SESSION_SECRET=<сгенерированная случайная строка>
+CORS_ORIGINS=null
 DATA_DIR=/var/data
 ```
 
-Its start command is:
+Описание:
+
+- `BOT_TOKEN` — новый токен, полученный через BotFather.
+- `ADMIN_ID` — числовой Telegram ID администратора.
+- `SESSION_SECRET` — секрет для подписи session-токенов. Минимум 32 символа.
+- `CORS_ORIGINS` — список разрешённых браузерных источников. Значение `null` разрешает запросы desktop-приложения, загруженного через `file://`.
+- `DATA_DIR` — каталог постоянного диска Render.
+
+Не добавляйте пробелы до или после значений.
+
+### Шаг 6. Выполнить деплой
+
+1. Нажмите **Save Changes**.
+2. Откройте **Manual Deploy**.
+3. Нажмите **Deploy latest commit**.
+4. Дождитесь статуса **Live**.
+
+### Шаг 7. Проверить основной сервис
+
+Откройте в браузере:
 
 ```text
-npm run start:payments
+https://ИМЯ-СЕРВИСА.onrender.com/status
 ```
 
-The payment provider must send:
+Ожидаемый ответ:
+
+```json
+{
+  "status": "OK",
+  "service": "Resell Control Bot"
+}
+```
+
+Также проверьте вкладку **Logs**. Там не должно быть сообщений:
 
 ```text
-X-Webhook-Signature: sha256=<HMAC-SHA256 of the exact request body>
+BOT_TOKEN, ADMIN_ID and SESSION_SECRET must be set
+Telegram polling error
 ```
 
-## Subscription model
+## 4. Настройка desktop-приложения
 
-- Activation keys are stored as SHA-256 hashes.
-- Activation returns a signed, expiring session token.
-- Protected API routes require `Authorization: Bearer <session token>`.
-- The desktop session token is stored through Electron `safeStorage`, not `localStorage`.
-- The expiry date in `localStorage` is display-only. The server remains authoritative.
+Desktop-приложение должно знать адрес основного сервиса Render.
 
-Desktop software running on a user's own computer cannot provide unbreakable DRM: a determined user can patch local application code. Server-side authorization protects server resources and Telegram operations even if the local UI is modified.
+### Вариант 1. Локальный запуск
 
-## Exposed credentials
+Перед запуском укажите адрес Render:
 
-Tokens previously committed to Git must be revoked in BotFather. Removing them from the current files does not remove them from Git history.
+```powershell
+$env:API_BASE="https://ИМЯ-СЕРВИСА.onrender.com"
+npm run desktop
+```
 
-History cleanup requires coordination with the repository owner:
+Переменная действует только в текущем окне PowerShell.
+
+### Вариант 2. Сборка приложения для пользователей
+
+Перед созданием установщика откройте `preload.js` и замените:
+
+```js
+const DEFAULT_API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
+```
+
+на реальный адрес Render:
+
+```js
+const DEFAULT_API_BASE = 'https://ИМЯ-СЕРВИСА.onrender.com';
+```
+
+После этого выполните проверку:
+
+```powershell
+npm run check
+npm test
+npm audit
+```
+
+Для запуска приложения:
+
+```powershell
+npm run desktop
+```
+
+## 5. Как работает подписка
+
+### Создание ключа
+
+Администратор отправляет боту:
+
+```text
+/generatekey
+```
+
+Бот создаёт криптографически случайный ключ. На сервере сохраняется только его SHA-256-хеш.
+
+Полный ключ показывается администратору один раз. Его нужно передать покупателю приватным способом.
+
+### Активация
+
+Пользователь вводит:
+
+1. Ключ активации.
+2. Свой числовой Telegram ID.
+
+Desktop-приложение отправляет эти данные на `/activate`.
+
+Сервер:
+
+1. Проверяет существование и срок действия ключа.
+2. Проверяет, не привязан ли ключ к другому Telegram ID.
+3. Привязывает ключ к пользователю.
+4. Возвращает подписанный session-токен.
+
+### Последующие запросы
+
+Session-токен хранится через Electron `safeStorage`. При обращении к защищённому API приложение передаёт:
+
+```text
+Authorization: Bearer <session-токен>
+```
+
+Сервер повторно проверяет:
+
+1. Подпись токена.
+2. Срок действия.
+3. Существование подписки.
+4. Привязанный Telegram ID.
+
+Поле `subscription_expiry` в `localStorage` используется только для отображения. Его изменение не создаёт действительную серверную сессию.
+
+## 6. Настройка платёжного webhook
+
+Платёжный сервер является отдельным сервисом. Он нужен только при использовании автоматических callback от платёжного провайдера.
+
+### Шаг 1. Создать отдельный Render Web Service
+
+1. В Render нажмите **New** → **Web Service**.
+2. Выберите тот же GitHub-репозиторий.
+3. Укажите:
+
+```text
+Runtime: Node
+Build Command: npm ci --omit=dev
+Start Command: npm run start:payments
+Health Check Path: /status
+```
+
+### Шаг 2. Подключить постоянный диск
+
+Создайте диск с Mount Path:
+
+```text
+/var/data
+```
+
+### Шаг 3. Создать секрет webhook
+
+Выполните:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Сохраните результат как `PAYMENT_WEBHOOK_SECRET`.
+
+### Шаг 4. Добавить переменные
+
+```text
+PAYMENT_BOT_TOKEN=<новый токен платёжного Telegram-бота>
+ADMIN_ID=<Telegram ID администратора>
+PAYMENT_WEBHOOK_SECRET=<сгенерированный секрет>
+DATA_DIR=/var/data
+```
+
+### Шаг 5. Настроить платёжного провайдера
+
+Каждый запрос к:
+
+```text
+/success
+/fail
+/result
+/refund
+/chargeback
+```
+
+должен содержать заголовок:
+
+```text
+X-Webhook-Signature: sha256=<подпись>
+```
+
+Подпись вычисляется как HMAC-SHA256 от точного тела HTTP-запроса с использованием `PAYMENT_WEBHOOK_SECRET`.
+
+Псевдокод:
+
+```js
+const signature = crypto
+  .createHmac('sha256', PAYMENT_WEBHOOK_SECRET)
+  .update(rawRequestBody)
+  .digest('hex');
+```
+
+Если используемый платёжный провайдер не позволяет создать такой заголовок, нужно адаптировать `verifyWebhook()` под официальный алгоритм подписи этого провайдера. Нельзя отключать проверку подписи.
+
+## 7. Локальный файл `.env`
+
+`.env` нужен только для локального запуска. Он должен лежать рядом с `package.json`:
+
+```text
+resellcontrollbot/
+├── .env
+├── package.json
+├── combined-server.js
+└── payment-server.js
+```
+
+Пример структуры:
+
+```env
+BOT_TOKEN=новый_токен
+PAYMENT_BOT_TOKEN=новый_платёжный_токен
+ADMIN_ID=705565283
+SESSION_SECRET=случайная_строка_минимум_32_символа
+PAYMENT_WEBHOOK_SECRET=другая_случайная_строка
+CORS_ORIGINS=null
+DATA_DIR=./data
+API_BASE=https://ИМЯ-СЕРВИСА.onrender.com
+```
+
+Правила:
+
+1. Не выполняйте `git add -f .env`.
+2. Не загружайте `.env` в GitHub.
+3. Не вставляйте настоящие токены в `.env.example`.
+4. Для Render используйте вкладку **Environment**, а не файл `.env`.
+5. Для разных секретов используйте разные случайные строки.
+
+## 8. Рабочие данные
+
+Следующие файлы больше не отслеживаются Git:
+
+```text
+data/keys.json
+data/payments.json
+data/rent-data.json
+data/subscription.json
+```
+
+Локально они могут существовать и продолжать использоваться. В коммит они не попадут благодаря `.gitignore`.
+
+На Render эти данные должны храниться в `/var/data` на постоянном диске.
+
+Не размещайте реальные ключи подписки, Telegram ID пользователей или историю платежей в публичном репозитории.
+
+## 9. Автоматические проверки
+
+Перед каждым коммитом рекомендуется выполнить:
+
+```powershell
+npm ci
+npm run check
+npm test
+npm audit --audit-level=high
+```
+
+Ожидаемый результат:
+
+- синтаксические проверки завершаются без ошибок;
+- оба security-теста проходят;
+- `npm audit` сообщает `found 0 vulnerabilities`;
+- среди отслеживаемых файлов нет Telegram-токенов.
+
+GitHub Actions автоматически запускает эти проверки для push и Pull Request в ветку `main`.
+
+## 10. Очистка старых токенов из истории Git
+
+Ротация токенов обязательна и является главным действием. Очистка истории нужна дополнительно, чтобы старые значения не оставались видимыми.
+
+Переписывание истории изменит хеши всех затронутых коммитов. Перед началом:
+
+1. Предупредите всех участников проекта.
+2. Убедитесь, что у владельца есть резервная копия.
+3. Закройте или объедините активные Pull Request.
+4. Попросите участников после операции заново клонировать репозиторий.
+
+Для очистки можно использовать `git-filter-repo`.
+
+Установка:
+
+```powershell
+pip install git-filter-repo
+```
+
+Создайте локальный файл `replacements.txt`, содержащий старые секреты:
+
+```text
+literal:СТАРЫЙ_ТОКЕН_1==>REDACTED_TELEGRAM_TOKEN
+literal:СТАРЫЙ_ТОКЕН_2==>REDACTED_TELEGRAM_TOKEN
+```
+
+Не коммитьте `replacements.txt`.
+
+Запустите:
 
 ```powershell
 git filter-repo --replace-text replacements.txt --force
-git push --force --all
-git push --force --tags
+git push --force --all origin
+git push --force --tags origin
 ```
 
-Do this only after all collaborators have been warned, because it rewrites commit hashes.
+После завершения:
+
+1. Удалите `replacements.txt`.
+2. Проверьте историю сканером секретов.
+3. Попросите участников удалить старые локальные клоны.
+
+## 11. Проверка после деплоя
+
+После каждого обновления:
+
+1. Откройте `/status`.
+2. Проверьте Render Logs.
+3. Отправьте боту `/start`.
+4. Создайте тестовый ключ через `/generatekey`.
+5. Активируйте ключ в desktop-приложении.
+6. Перезапустите приложение и убедитесь, что сессия сохранилась.
+7. Попробуйте изменить `subscription_expiry` в DevTools. Без session-токена серверные операции должны возвращать `401`.
+8. Создайте тестовую аренду и проверьте сохранение на постоянном диске.
+9. Перезапустите Render-сервис и убедитесь, что данные не пропали.
+
+## 12. Ограничение защиты desktop-приложения
+
+Нельзя создать абсолютно не взламываемую проверку лицензии в программе, которая полностью выполняется на компьютере пользователя. Пользователь с достаточными знаниями может изменить локальный JavaScript или бинарный файл.
+
+Поэтому критические возможности должны защищаться на сервере. Текущая реализация защищает API, Telegram-операции и серверные данные даже в случае изменения локального интерфейса.
