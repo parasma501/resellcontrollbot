@@ -1,0 +1,28 @@
+name: Security checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check current tree for Telegram tokens
+        shell: bash
+        run: |
+          if git grep -En '[0-9]{8,10}:[A-Za-z0-9_-]{35}' -- .; then
+            echo "Telegram token detected in tracked files"
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm audit --audit-level=high

@@ -1,6 +1,6 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
-const TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require('./telegram-client');
 const fs = require('fs');
 const path = require('path');
 
