@@ -1,11 +1,17 @@
+require('dotenv').config();
+
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
 // ======== КОНФИГУРАЦИЯ (ДО СОЗДАНИЯ БОТА) ========
-const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
-const ADMIN_ID = process.env.ADMIN_ID || '705565283';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_ID = process.env.ADMIN_ID;
+
+if (!BOT_TOKEN || !ADMIN_ID) {
+    throw new Error('BOT_TOKEN and ADMIN_ID must be set in the environment');
+}
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
