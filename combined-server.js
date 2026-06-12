@@ -278,6 +278,8 @@ app.post('/api/add-rental', (req, res) => {
     res.json({ ok: true, rentalId: newRental.id });
 });
 
+app.get('/healthz', (req, res) => res.sendStatus(200));
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Сервер запущен на порту ${PORT}`);
