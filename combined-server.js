@@ -285,5 +285,3 @@ app.listen(PORT, async () => {
     await bot.setWebHook(webhookUrl);
     console.log(`Webhook установлен на ${webhookUrl}`);
 });
-
-app.listen(PORT, () => console.log(`Сервер на порту ${PORT}`));
