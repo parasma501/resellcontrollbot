@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -5,8 +7,12 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BOT_TOKEN = '8601564949:AAHcdt-buu5sv8kSTj1kyz5yh21IIWj01a8';
-const ADMIN_ID = '705565283';
+const BOT_TOKEN = process.env.PAYMENT_BOT_TOKEN;
+const ADMIN_ID = process.env.ADMIN_ID;
+
+if (!BOT_TOKEN || !ADMIN_ID) {
+    throw new Error('PAYMENT_BOT_TOKEN and ADMIN_ID must be set in the environment');
+}
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
