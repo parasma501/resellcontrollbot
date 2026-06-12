@@ -6,7 +6,7 @@ const path = require('path');
 // ======== КОНФИГУРАЦИЯ (ДО СОЗДАНИЯ БОТА) ========
 const BOT_TOKEN = process.env.BOT_TOKEN || '8597812988:AAHpBTTmWvFPB0drkx01_DlwXLylEqOQIWM';
 const ADMIN_ID = process.env.ADMIN_ID || '705565283';
-const PORT = process.env.PORT || 3000;
+
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
