@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const DEFAULT_API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
+const DEFAULT_API_BASE = 'https://resellcontrol1bot.onrender.com';
 
 contextBridge.exposeInMainWorld('desktopApi', Object.freeze({
     apiBase: process.env.API_BASE || DEFAULT_API_BASE,

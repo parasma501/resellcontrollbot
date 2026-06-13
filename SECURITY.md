@@ -185,7 +185,7 @@ npm run desktop
 Перед созданием установщика откройте `preload.js` и замените:
 
 ```js
-const DEFAULT_API_BASE = 'https://resellcontrollbot-production-194e.up.railway.app';
+const DEFAULT_API_BASE = 'https://resellcontrol1bot.onrender.com';
 ```
 
 на реальный адрес Render:

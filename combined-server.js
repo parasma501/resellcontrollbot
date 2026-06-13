@@ -303,6 +303,22 @@ bot.onText(/\/clearallrentals/, (msg) => {
     writeRentData({ rentals: [] });
     bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
 });
+
+// Команда для сброса ключа (только для админа)
+bot.onText(/\/resetkey (.+)/, (msg, match) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const key = match[1].trim();
+    const keys = readKeys();
+    const found = findKeyRecord(keys, key);
+    if (!found) return bot.sendMessage(msg.chat.id, '❌ Ключ не найден.');
+    migrateKeyRecord(found);
+    found.used = false;
+    found.telegramId = null;
+    delete found.activatedAt;
+    writeKeys(keys);
+    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` сброшен. Теперь его можно использовать повторно.`);
+});
+
 bot.onText(/\/webhookinfo/, async (msg) => {
     if (msg.chat.id.toString() !== ADMIN_ID) return;
     try {
@@ -447,6 +463,8 @@ app.post('/api/add-rental', requireSession, (req, res) => {
     writeRentData(data);
     res.json({ ok: true, rentalId: newRental.id });
 });
+
+app.get('/healthz', (req, res) => res.sendStatus(200));
 
 const PORT = process.env.PORT || 3000;
 if (require.main === module) app.listen(PORT, () => {
