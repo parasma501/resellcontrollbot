@@ -1,14 +1,17 @@
 const APP_EDITION = 'PRO';
-const { ipcRenderer } = require('electron');
-const pkg = require('./package.json');
+const desktopApi = window.desktopApi;
 
 const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
 const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update-pro/releases';
-const CURRENT_VERSION = pkg.version;
-const API_BASE = 'https://resellcontrol1bot.onrender.com';
-const fs = require('fs');
-const path = require('path');
+const CURRENT_VERSION = '2.0.0';
+const API_BASE = desktopApi?.apiBase || 'https://resellcontrol1bot.onrender.com';
+
+function subscriptionHeaders(token) {
+  return token
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+    : { 'Content-Type': 'application/json' };
+}
 
 let updateInfo = null;
 let isAppFocused = true;
@@ -315,20 +318,20 @@ const timers = {
   online3h:{initial:10800,remaining:10800,interval:null,displayId:null}
 };
 
-function appMinimize(){ ipcRenderer.send('window:minimize'); }
+function appMinimize(){ desktopApi?.minimize(); }
 function openDiscord(){
-  ipcRenderer.send('open-external', DISCORD_URL);
+  desktopApi?.openExternal(DISCORD_URL);
 }
 
 function openUpdateDownload(){
-  ipcRenderer.send('open-external', updateInfo.downloadUrl || FALLBACK_DOWNLOAD_URL);
+  desktopApi?.openExternal(updateInfo.downloadUrl || FALLBACK_DOWNLOAD_URL);
 }
 
-function appClose(){ ipcRenderer.send('window:close'); }
+function appClose(){ desktopApi?.close(); }
 
 function openExternalUrl(url){
   if(!url) return;
-  ipcRenderer.send('open-external', url);
+  desktopApi?.openExternal(url);
 }
 
 function toggleNavMenu(){ document.getElementById('navMenu').classList.toggle('open'); }
@@ -526,7 +529,7 @@ function renderOperations(){
     
     row.innerHTML = `
       <div class="${moneyClass}">${moneyWithCurrency(op.amount)}</div>
-      <div>${op.comment}</div>
+      <div>${escapeHtml(op.comment)}</div>
       <div class="net-profit-cell">${netProfit}</div>
       <div>${formatDate(op.timestamp)}</div>
       <button class="op-delete" title="Удалить запись" onclick="deleteOperation('${op.id}')">×</button>
@@ -603,7 +606,7 @@ function setupCommentAutocomplete(){
     }
     
     list.innerHTML = suggestions.map((s, index) => 
-      `<div class="autocomplete-item" data-value="${s}">${s}</div>`
+      `<div class="autocomplete-item" data-value="${escapeHtml(s)}">${escapeHtml(s)}</div>`
     ).join('');
     
     positionContainer();
@@ -650,7 +653,7 @@ document.addEventListener('paste', (e) => {
       reader.onload = ev => {
         currentProperty.image = ev.target.result;
         saveProperties();
-        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${currentProperty.image}">`;
+        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${safeImageSource(currentProperty.image)}">`;
         // Сброс фокуса
         focusedPhotoArea = null;
         const rentPhotoPreview = document.getElementById('rentPhotoPreview');
@@ -692,7 +695,7 @@ function renderProperties(){
     
     div.innerHTML = `
       <div class="property-content">
-        <div class="property-name">${displayName}</div>
+        <div class="property-name">${escapeHtml(displayName)}</div>
         ${!isDeleteConfirm 
           ? `<button class="property-delete-btn">✕</button>` 
           : `<div class="property-delete-confirm">
@@ -803,7 +806,7 @@ function handleNewPropertyPaste(e){
       const reader = new FileReader();
       reader.onload = ev => {
         newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
+        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -818,7 +821,7 @@ function handlePropertyPhotoPaste(e){
       const reader = new FileReader();
       reader.onload = ev => {
         newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
+        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -836,7 +839,7 @@ function handlePropertyPhotoPaste(e){
       const reader = new FileReader();
       reader.onload = ev => {
         newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
+        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -925,19 +928,7 @@ function saveSoundSettings() {
 }
 function getSoundPath(filename) {
   if (!filename || filename === 'default' || filename === 'custom') return null;
-  // Пытаемся найти файл относительно папки, где лежит main.js
-  const possiblePaths = [
-    path.join(__dirname, 'sounds', filename),
-    path.join(process.cwd(), 'sounds', filename),
-    path.join(__dirname, '../sounds', filename)
-  ];
-  for (const fullPath of possiblePaths) {
-    if (fs.existsSync(fullPath)) {
-      return fullPath;
-    }
-  }
-  console.warn('Звук не найден:', filename);
-  return null;
+  return `./sounds/${encodeURIComponent(filename)}`;
 }
 function playSound(callback) {
   if (selectedSound === 'default') {
@@ -1162,8 +1153,7 @@ function confirmDeal() {
     
     closeDealModal();
     
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('notify-rental-created', operation);
+    desktopApi?.saveRental(operation);
 }
 function setRentFilter(filter){
   rentOperationFilter = filter;
@@ -1376,7 +1366,7 @@ function handlePaste(e){
       reader.onload = ev => {
         currentImg = ev.target.result;
         document.getElementById('modalImgContainer').innerHTML =
-          `<img src="${currentImg}" style="width:100%;height:100%;object-fit:cover">`;
+          `<img src="${safeImageSource(currentImg)}" style="width:100%;height:100%;object-fit:cover">`;
       };
 
       reader.readAsDataURL(file);
@@ -1531,7 +1521,7 @@ function renderItems(){
 div.innerHTML = `
   ${!isDeleteConfirm ? `<button class="item-delete" onclick="requestDeleteItem(${i.id},event)">X</button>` : ''}
   <div class="item-media">
-    ${i.img ? `<img src="${i.img}">` : 'Нет фото'}
+    ${i.img ? `<img src="${safeImageSource(i.img)}">` : 'Нет фото'}
     ${
       isDeleteConfirm
         ? `<div class="item-confirm-delete">
@@ -1542,7 +1532,7 @@ div.innerHTML = `
     }
   </div>
   <div class="item-body">
-    <div class="item-name">${i.name}</div>
+    <div class="item-name">${escapeHtml(i.name)}</div>
     <div class="item-price">${moneyWithCurrency(i.buy)}</div>
     ${i.sell ? `<div class="item-price">Продажа: ${moneyWithCurrency(i.sell)}</div>` : ''}
   </div>
@@ -1568,7 +1558,7 @@ function selectProperty(prop){
   
   const preview = document.getElementById('rentPhotoPreview');
   if(prop.image){
-    preview.innerHTML = `<img src="${prop.image}">`;
+    preview.innerHTML = `<img src="${safeImageSource(prop.image)}">`;
   } else {
     preview.innerHTML = 'Нет фото';
   }
@@ -2390,7 +2380,7 @@ function renderUserTimers(){
     card.innerHTML = `
       <div class="user-timer-main">
         ${timer.isSaved ? '' : `<div class="user-timer-alert">Не забудь сохранить таймер</div>`}
-        <div class="user-timer-title">${timer.name || 'Новый таймер'}</div>
+        <div class="user-timer-title">${escapeHtml(timer.name || 'Новый таймер')}</div>
         <div class="user-timer-time">${formatTimer(timer.remaining)}</div>
 
         <div class="user-timer-actions">
@@ -2507,7 +2497,7 @@ function handleRentPhotoPaste(e){
       reader.onload = ev => {
         currentProperty.image = ev.target.result;
         saveProperties();
-        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${currentProperty.image}">`;
+        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${safeImageSource(currentProperty.image)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -2954,27 +2944,21 @@ function initScrollToTopRent(){
 
 // Отправка события аренды в бота
 function notifyBotRentalCreated(rental) {
-    if (window.require) {
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('notify-rental-created', rental);
-    } else {
-        // Fallback для тестирования в браузере
-        console.log('📩 Rental notification (browser mode):', rental);
-    }
+    desktopApi?.saveRental(rental);
 }
 
 // Добавление аренды на сервер (для уведомлений в Telegram)
 async function addRentalToServer(propertyName, start, end, total) {
-    const key = localStorage.getItem('subscription_key');
-    if (!key) {
-        console.warn('Нет ключа для отправки аренды на сервер');
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) {
+        console.warn('Нет активной сессии для отправки аренды на сервер');
         return;
     }
     try {
         const response = await fetch(`${API_BASE}/api/add-rental`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key, propertyName, start, end, total })
+            headers: subscriptionHeaders(sessionToken),
+            body: JSON.stringify({ propertyName, start, end, total })
         });
         const data = await response.json();
         if (data.ok) {
@@ -2989,17 +2973,19 @@ async function addRentalToServer(propertyName, start, end, total) {
 
 // Проверка статуса подписки
 async function checkSubscriptionStatus() {
-    if (window.require) {
-        const { ipcRenderer } = require('electron');
-        try {
-            const status = await ipcRenderer.invoke('check-subscription');
-            return status;
-        } catch (error) {
-            console.error('Ошибка проверки подписки:', error);
-            return { isActive: false, expiryDate: null };
-        }
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) return { isActive: false, expiryDate: null };
+    try {
+        const response = await fetch(`${API_BASE}/api/session`, {
+            headers: subscriptionHeaders(sessionToken)
+        });
+        if (!response.ok) return { isActive: false, expiryDate: null };
+        const status = await response.json();
+        return { isActive: status.valid === true, expiryDate: status.expiryDate || null };
+    } catch (error) {
+        console.error('Ошибка проверки подписки:', error);
+        return { isActive: false, expiryDate: null };
     }
-    return { isActive: false, expiryDate: null };
 }
 
 // Переопределяем confirmDeal для отправки уведомления боту
@@ -3300,12 +3286,20 @@ function closeRentHistoryModal() {
 // Вспомогательная функция для экранирования HTML
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
+        if (m === "'") return '&#39;';
         return m;
     });
+}
+
+function safeImageSource(value) {
+    return typeof value === 'string' && /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(value)
+        ? escapeHtml(value)
+        : '';
 }
 
 // Закрытие модального окна по клику вне контента
@@ -3345,7 +3339,7 @@ function openEndRentalModal(){
         div.style.cursor = 'pointer';
         div.style.background = endRentalSelectedId === rental.id ? '#2a3040' : 'transparent';
         div.innerHTML = `
-            <div>${rental.propertyName}</div>
+            <div>${escapeHtml(rental.propertyName)}</div>
             <div>${formatDate(rental.start)}</div>
             <div>${formatDate(rental.end)}</div>
             <div class="money-plus">${moneyWithCurrency(rental.total)}</div>
@@ -3421,8 +3415,7 @@ function confirmEndRental(){
     updateRentHistoryTotal();
     
     // Отправляем уведомление в бота
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('notify-rental-created', {
+    desktopApi?.saveRental({
         ...rental,
         endedEarly: true,
         actualEnd: actualEnd
@@ -3454,24 +3447,21 @@ document.addEventListener('click', (e) => {
 // Проверка подписки при запуске
 async function checkSubscription() {
     try {
-        const key = localStorage.getItem('subscription_key') || '';
-        if (!key) {
+        const sessionToken = await desktopApi?.getSession();
+        if (!sessionToken) {
             showActivationModal();
             return;
         }
-        const response = await fetch(`${API_BASE}/checkkey`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
+        const response = await fetch(`${API_BASE}/api/session`, {
+            method: 'GET',
+            headers: subscriptionHeaders(sessionToken)
         });
         const result = await response.json();
-        if (result.valid) {
-            // Обновим срок действия, если сервер вернул новую дату
+        if (response.ok && result.valid) {
             localStorage.setItem('subscription_expiry', result.expiryDate);
             hideActivationModal();
         } else {
-            // Ключ невалиден или истёк
-            localStorage.removeItem('subscription_key');
+            await desktopApi?.clearSession();
             localStorage.removeItem('subscription_expiry');
             showActivationModal();
         }
@@ -3500,8 +3490,7 @@ function hideActivationModal() {
 // Открыть бота для получения Telegram ID
 function openTelegramIdBot(event) {
     event.preventDefault();
-    const { shell } = require('electron');
-    shell.openExternal('https://t.me/userinfobot');
+    desktopApi?.openExternal('https://t.me/userinfobot');
 }
 
 // Активация ключа с Telegram ID
@@ -3518,7 +3507,7 @@ async function activateKey() {
     if (!telegramId) return alert('Введите ваш Telegram ID (число)');
 
     try {
-        const response = await fetch(`${API_BASE}/checkkey`, {
+        const response = await fetch(`${API_BASE}/activate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key, telegramId })
@@ -3527,7 +3516,8 @@ async function activateKey() {
 
         if (data.valid) {
             localStorage.setItem('subscription_expiry', data.expiryDate);
-            localStorage.setItem('subscription_key', key);
+            const stored = await desktopApi?.setSession(data.sessionToken);
+            if (!stored) throw new Error('Secure session storage is unavailable');
             localStorage.setItem('telegramId', telegramId);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
             const modal = document.getElementById('activationModal');
@@ -3541,45 +3531,14 @@ async function activateKey() {
     }
 }
 
-// Проверка при загрузке страницы (исправлен ID модального окна)
 window.addEventListener('DOMContentLoaded', () => {
-    console.log('1. DOMContentLoaded сработал');
-    const expiry = localStorage.getItem('subscription_expiry');
-    console.log('2. expiry =', expiry);
-    const modal = document.getElementById('activationModal');
-    console.log('3. modal элемент =', modal);
-    if (modal) {
-        if (expiry && new Date(expiry) > new Date()) {
-            modal.style.display = 'none';
-            console.log('4. Модалка скрыта, подписка активна');
-        } else {
-            modal.style.display = 'flex';
-            console.log('4. Модалка показана (нет даты или истекла)');
-        }
-    } else {
-        console.error('5. Модальное окно не найдено');
-    }
+    checkSubscription();
 });
 
 function checkExistingSubscription() {
-    const expiry = localStorage.getItem('subscription_expiry');
-    const modal = document.getElementById('activationModal');
-    if (!modal) return;
-    if (expiry && new Date(expiry) > new Date()) {
-        modal.style.display = 'none';
-    } else {
-        modal.style.display = 'flex';
-    }
+    return checkSubscription();
 }
-checkExistingSubscription();
 
 function checkLocalSubscription() {
-    const expiry = localStorage.getItem('subscription_expiry');
-    if (expiry && new Date(expiry) > new Date()) {
-        // Подписка активна
-        document.getElementById('activateForm').style.display = 'none';
-    } else {
-        // Подписка истекла или отсутствует
-        document.getElementById('activateForm').style.display = 'block';
-    }
+    return checkSubscription();
 }
