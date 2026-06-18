@@ -2,14 +2,23 @@
   "name": "resellcontrollbot",
   "version": "2.0.0",
   "description": "Telegram bot with payment integration",
-  "main": "combined-server.js",
+  "main": "main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "start": "node combined-server.js"
+    "start": "node combined-server.js",
+    "start:payments": "node payment-server.js",
+    "desktop": "electron .",
+    "check": "node --check combined-server.js && node --check payment-server.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check telegram-client.js",
+    "test": "node --test --test-isolation=none"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "body-parser": "^1.20.2",
     "dotenv": "^17.4.2",
-    "node-telegram-bot-api": "^0.61.0"
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
   }
 }

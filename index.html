@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://raw.githubusercontent.com https://github.com https://resellcontrollbot.onrender.com; img-src 'self' data:; frame-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://raw.githubusercontent.com https://github.com https://resellcontrollbot.onrender.com; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none';">
 <title>Перепродажа GTA5RP</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./styles.css">
@@ -625,61 +625,6 @@
 <div class="property-photo-preview" id="newPropertyPhotoPreview">Нет фото</div>
 <button class="btn btn-green" style="width:100%" onclick="confirmAddProperty()">Добавить</button>
 </div>
-</div>
-
-<div class="modal" id="dealModal">
-<div class="modal-content deal-modal" id="dealModalContent" tabindex="0">
-<button class="modal-close" onclick="closeDealModal()">X</button>
-<h3 style="margin:0 0 12px">Новая сделка</h3>
-<div class="deal-templates">
-<button class="template-btn" onclick="applyDealTemplate(1)">1ч</button>
-<button class="template-btn" onclick="applyDealTemplate(2)">2ч</button>
-<button class="template-btn" onclick="applyDealTemplate(4)">4ч</button>
-<button class="template-btn" onclick="applyDealTemplate(6)">6ч</button>
-<button class="template-btn" onclick="applyDealTemplate(12)">12ч</button>
-<button class="template-btn" onclick="applyDealTemplate(24)">24ч</button>
-<button class="template-btn" onclick="applyDealTemplate(48)">48ч</button>
-<button class="template-btn" onclick="applyDealTemplate(99)">99ч</button>
-</div>
-<div class="deal-row">
-<div class="deal-field">
-<label>Начало</label>
-<input type="datetime-local" id="dealStart">
-</div>
-<div class="deal-field">
-<label>Конец</label>
-<input type="datetime-local" id="dealEnd">
-</div>
-</div>
-<div class="deal-row">
-<div class="deal-field">
-<label>Кол-во часов</label>
-<input type="number" id="dealHours" min="1" value="1">
-</div>
-<div class="deal-field">
-<label>Цена за час</label>
-<input type="text" inputmode="numeric" class="text-money" id="dealPricePerHour" placeholder="0">
-</div>
-<div class="deal-field">
-<label>Сумма</label>
-<input type="text" inputmode="numeric" class="text-money" id="dealTotal" placeholder="0">
-</div>
-</div>
-<div class="deal-row full">
-<div class="deal-field">
-<label>Комментарий</label>
-<input type="text" id="dealComment" placeholder="Комментарий">
-</div>
-</div>
-<div class="deal-actions">
-<button class="btn btn-dark" onclick="closeDealModal()">Отмена</button>
-<button class="btn btn-green" onclick="confirmDeal()">Подтвердить</button>
-</div>
-</div>
-</div>
-
-<div class="autocomplete-container" id="autocompleteContainer">
-<div class="autocomplete-list" id="autocompleteList"></div>
 </div>
 
 <button id="scrollToTopBtnRent" class="scroll-to-top-btn" onclick="scrollToTopRent()" title="Наверх">

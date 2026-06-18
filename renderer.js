@@ -1,14 +1,27 @@
 const APP_EDITION = 'PRO';
-const { ipcRenderer } = require('electron');
-const pkg = require('./package.json');
+const desktopApi = window.desktopApi;
 
 const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
 const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update-pro/releases';
-const CURRENT_VERSION = pkg.version;
-const API_BASE = 'https://resellcontrol1bot.onrender.com';
-const fs = require('fs');
-const path = require('path');
+const CURRENT_VERSION = '2.0.0';
+const API_BASE = desktopApi?.apiBase || 'https://resellcontrol1bot.onrender.com';
+
+function readStorageJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    console.warn(`Некорректные данные localStorage для ${key}, использую значение по умолчанию`);
+    return fallback;
+  }
+}
+
+function subscriptionHeaders(token) {
+  return token
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+    : { 'Content-Type': 'application/json' };
+}
 
 let updateInfo = null;
 let isAppFocused = true;
@@ -34,9 +47,7 @@ let isBeepSequenceActive = false;
 
 // История аренды
 let rentOperations = [];
-const savedRentOps = localStorage.getItem('rentOperations');
-if (savedRentOps) rentOperations = JSON.parse(savedRentOps);
-else rentOperations = [];
+rentOperations = readStorageJson('rentOperations', []);
 
 let rentHistoryFilter = localStorage.getItem('rentHistoryFilter') || 'all';
 let rentHistorySelectedMonth = new Date().getMonth();
@@ -176,17 +187,17 @@ let bpDifficultyFilter = localStorage.getItem('bpDifficultyFilter') || 'all';
 let demorganAtTop = localStorage.getItem('demorganAtTop') === 'true';
 updateInfo = { available: false, latestVersion: CURRENT_VERSION, notes: '', downloadUrl: FALLBACK_DOWNLOAD_URL };
 let operations = [];
-const bpChecked = JSON.parse(localStorage.getItem('bpChecked') || '{}');
-const bpPinned = JSON.parse(localStorage.getItem('bpPinned') || '{}');
-const bpHistory = JSON.parse(localStorage.getItem('bpHistory') || '{}');
-const bpDifficultyMap = JSON.parse(localStorage.getItem('bpDifficultyMap') || '{}');
+const bpChecked = readStorageJson('bpChecked', {});
+const bpPinned = readStorageJson('bpPinned', {});
+const bpHistory = readStorageJson('bpHistory', {});
+const bpDifficultyMap = readStorageJson('bpDifficultyMap', {});
 let online3hCycles = parseInt(localStorage.getItem('online3hCycles') || '0', 10) || 0;
 const hintTimers = {};
 let userTimers = [];
 let userTimerIdSeq = 1;
 
 function loadSavedUserTimers(){
-  const saved = JSON.parse(localStorage.getItem('savedUserTimers') || '[]');
+  const saved = readStorageJson('savedUserTimers', []);
 
   userTimers = saved.map((timer, index) => ({
     id: timer.id || ('savedTimer_' + Date.now() + '_' + index),
@@ -279,7 +290,7 @@ const defaultHintOrder = hintCards.map(h => h.id);
 
 function getSavedHintOrder(){
   try{
-    const saved = JSON.parse(localStorage.getItem('hintOrder') || '[]');
+    const saved = readStorageJson('hintOrder', []);
     if(!Array.isArray(saved) || !saved.length) return [...defaultHintOrder];
 
     const validSaved = saved.filter(id => defaultHintOrder.includes(id));
@@ -315,20 +326,20 @@ const timers = {
   online3h:{initial:10800,remaining:10800,interval:null,displayId:null}
 };
 
-function appMinimize(){ ipcRenderer.send('window:minimize'); }
+function appMinimize(){ desktopApi?.minimize(); }
 function openDiscord(){
-  ipcRenderer.send('open-external', DISCORD_URL);
+  desktopApi?.openExternal(DISCORD_URL);
 }
 
 function openUpdateDownload(){
-  ipcRenderer.send('open-external', updateInfo.downloadUrl || FALLBACK_DOWNLOAD_URL);
+  desktopApi?.openExternal(updateInfo.downloadUrl || FALLBACK_DOWNLOAD_URL);
 }
 
-function appClose(){ ipcRenderer.send('window:close'); }
+function appClose(){ desktopApi?.close(); }
 
 function openExternalUrl(url){
   if(!url) return;
-  ipcRenderer.send('open-external', url);
+  desktopApi?.openExternal(url);
 }
 
 function toggleNavMenu(){ document.getElementById('navMenu').classList.toggle('open'); }
@@ -526,18 +537,13 @@ function renderOperations(){
     
     row.innerHTML = `
       <div class="${moneyClass}">${moneyWithCurrency(op.amount)}</div>
-      <div>${op.comment}</div>
+      <div>${escapeHtml(op.comment)}</div>
       <div class="net-profit-cell">${netProfit}</div>
       <div>${formatDate(op.timestamp)}</div>
       <button class="op-delete" title="Удалить запись" onclick="deleteOperation('${op.id}')">×</button>
     `;
     body.appendChild(row);
   });
-}
-
-function scrollToTopRent(){
-  const el = document.querySelector('.property-list');
-  if(el) el.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function openAddPropertyModal(){
@@ -603,7 +609,7 @@ function setupCommentAutocomplete(){
     }
     
     list.innerHTML = suggestions.map((s, index) => 
-      `<div class="autocomplete-item" data-value="${s}">${s}</div>`
+      `<div class="autocomplete-item" data-value="${escapeHtml(s)}">${escapeHtml(s)}</div>`
     ).join('');
     
     positionContainer();
@@ -650,7 +656,7 @@ document.addEventListener('paste', (e) => {
       reader.onload = ev => {
         currentProperty.image = ev.target.result;
         saveProperties();
-        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${currentProperty.image}">`;
+        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${safeImageSource(currentProperty.image)}">`;
         // Сброс фокуса
         focusedPhotoArea = null;
         const rentPhotoPreview = document.getElementById('rentPhotoPreview');
@@ -692,7 +698,7 @@ function renderProperties(){
     
     div.innerHTML = `
       <div class="property-content">
-        <div class="property-name">${displayName}</div>
+        <div class="property-name">${escapeHtml(displayName)}</div>
         ${!isDeleteConfirm 
           ? `<button class="property-delete-btn">✕</button>` 
           : `<div class="property-delete-confirm">
@@ -803,22 +809,7 @@ function handleNewPropertyPaste(e){
       const reader = new FileReader();
       reader.onload = ev => {
         newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
-      };
-      reader.readAsDataURL(file);
-      break;
-    }
-  }
-}
-function handlePropertyPhotoPaste(e){
-  const items = e.clipboardData?.items || [];
-  for(const item of items){
-    if(item.type.includes('image')){
-      const file = item.getAsFile();
-      const reader = new FileReader();
-      reader.onload = ev => {
-        newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
+        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -836,7 +827,7 @@ function handlePropertyPhotoPaste(e){
       const reader = new FileReader();
       reader.onload = ev => {
         newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${newPropertyPhoto}">`;
+        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -925,19 +916,7 @@ function saveSoundSettings() {
 }
 function getSoundPath(filename) {
   if (!filename || filename === 'default' || filename === 'custom') return null;
-  // Пытаемся найти файл относительно папки, где лежит main.js
-  const possiblePaths = [
-    path.join(__dirname, 'sounds', filename),
-    path.join(process.cwd(), 'sounds', filename),
-    path.join(__dirname, '../sounds', filename)
-  ];
-  for (const fullPath of possiblePaths) {
-    if (fs.existsSync(fullPath)) {
-      return fullPath;
-    }
-  }
-  console.warn('Звук не найден:', filename);
-  return null;
+  return `./sounds/${encodeURIComponent(filename)}`;
 }
 function playSound(callback) {
   if (selectedSound === 'default') {
@@ -1128,7 +1107,7 @@ function calculateDealTotal(){
   const total = hours * pricePerHour;
   document.getElementById('dealTotal').value = formatMoney(total);
 }
-function confirmDeal() {
+async function confirmDeal() {
     if(!currentProperty) return;
     const start = document.getElementById('dealStart').value;
     const end = document.getElementById('dealEnd').value;
@@ -1145,6 +1124,7 @@ function confirmDeal() {
         propertyName: currentProperty.name,
         start,
         end,
+        originalEnd: end,
         hours,
         pricePerHour,
         total,
@@ -1156,14 +1136,15 @@ function confirmDeal() {
     saveRentOperations();
     updateRentStats();
     
-    // ======== ВЫЗОВ ДЛЯ ОТПРАВКИ НА СЕРВЕР ========
-    addRentalToServer(operation.propertyName, operation.start, operation.end, operation.total);
-    // =============================================
+    const serverRentalId = await addRentalToServer(operation.propertyName, operation.start, operation.end, operation.total);
+    if (serverRentalId) {
+        operation.serverRentalId = serverRentalId;
+        saveRentOperations();
+    }
     
     closeDealModal();
     
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('notify-rental-created', operation);
+    desktopApi?.saveRental(operation);
 }
 function setRentFilter(filter){
   rentOperationFilter = filter;
@@ -1376,7 +1357,7 @@ function handlePaste(e){
       reader.onload = ev => {
         currentImg = ev.target.result;
         document.getElementById('modalImgContainer').innerHTML =
-          `<img src="${currentImg}" style="width:100%;height:100%;object-fit:cover">`;
+          `<img src="${safeImageSource(currentImg)}" style="width:100%;height:100%;object-fit:cover">`;
       };
 
       reader.readAsDataURL(file);
@@ -1531,7 +1512,7 @@ function renderItems(){
 div.innerHTML = `
   ${!isDeleteConfirm ? `<button class="item-delete" onclick="requestDeleteItem(${i.id},event)">X</button>` : ''}
   <div class="item-media">
-    ${i.img ? `<img src="${i.img}">` : 'Нет фото'}
+    ${i.img ? `<img src="${safeImageSource(i.img)}">` : 'Нет фото'}
     ${
       isDeleteConfirm
         ? `<div class="item-confirm-delete">
@@ -1542,7 +1523,7 @@ div.innerHTML = `
     }
   </div>
   <div class="item-body">
-    <div class="item-name">${i.name}</div>
+    <div class="item-name">${escapeHtml(i.name)}</div>
     <div class="item-price">${moneyWithCurrency(i.buy)}</div>
     ${i.sell ? `<div class="item-price">Продажа: ${moneyWithCurrency(i.sell)}</div>` : ''}
   </div>
@@ -1568,7 +1549,7 @@ function selectProperty(prop){
   
   const preview = document.getElementById('rentPhotoPreview');
   if(prop.image){
-    preview.innerHTML = `<img src="${prop.image}">`;
+    preview.innerHTML = `<img src="${safeImageSource(prop.image)}">`;
   } else {
     preview.innerHTML = 'Нет фото';
   }
@@ -2390,7 +2371,7 @@ function renderUserTimers(){
     card.innerHTML = `
       <div class="user-timer-main">
         ${timer.isSaved ? '' : `<div class="user-timer-alert">Не забудь сохранить таймер</div>`}
-        <div class="user-timer-title">${timer.name || 'Новый таймер'}</div>
+        <div class="user-timer-title">${escapeHtml(timer.name || 'Новый таймер')}</div>
         <div class="user-timer-time">${formatTimer(timer.remaining)}</div>
 
         <div class="user-timer-actions">
@@ -2507,7 +2488,7 @@ function handleRentPhotoPaste(e){
       reader.onload = ev => {
         currentProperty.image = ev.target.result;
         saveProperties();
-        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${currentProperty.image}">`;
+        document.getElementById('rentPhotoPreview').innerHTML = `<img src="${safeImageSource(currentProperty.image)}">`;
       };
       reader.readAsDataURL(file);
       break;
@@ -2913,12 +2894,6 @@ window.addEventListener('load', () => {
   setTimeout(updateScrollToTopButton, 250);
 });
 
-window.addEventListener('load', () => {
-  initScrollToTopButton();
-  setTimeout(updateScrollToTopButton, 50);
-  setTimeout(updateScrollToTopButton, 250);
-});
-
 function scrollToTopRent(){
   const el = document.querySelector('.property-list');
   if(el) el.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2954,88 +2929,75 @@ function initScrollToTopRent(){
 
 // Отправка события аренды в бота
 function notifyBotRentalCreated(rental) {
-    if (window.require) {
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('notify-rental-created', rental);
-    } else {
-        // Fallback для тестирования в браузере
-        console.log('📩 Rental notification (browser mode):', rental);
+    desktopApi?.saveRental(rental);
+}
+
+async function notifyRentalEndedToServer(rental, actualEnd) {
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) return null;
+    try {
+        const response = await fetch(`${API_BASE}/api/rental-ended`, {
+            method: 'POST',
+            headers: subscriptionHeaders(sessionToken),
+            body: JSON.stringify({
+                rentalId: rental.serverRentalId || null,
+                carName: rental.propertyName,
+                endDate: actualEnd
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            console.error('Ошибка уведомления о досрочном завершении:', data.error || response.status);
+        }
+        return data;
+    } catch (error) {
+        console.error('Ошибка соединения с сервером при завершении аренды:', error);
+        return null;
     }
 }
 
 // Добавление аренды на сервер (для уведомлений в Telegram)
 async function addRentalToServer(propertyName, start, end, total) {
-    const key = localStorage.getItem('subscription_key');
-    if (!key) {
-        console.warn('Нет ключа для отправки аренды на сервер');
-        return;
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) {
+        console.warn('Нет активной сессии для отправки аренды на сервер');
+        return null;
     }
     try {
         const response = await fetch(`${API_BASE}/api/add-rental`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key, propertyName, start, end, total })
+            headers: subscriptionHeaders(sessionToken),
+            body: JSON.stringify({ propertyName, start, end, total })
         });
         const data = await response.json();
         if (data.ok) {
             console.log('Аренда сохранена на сервере, id:', data.rentalId);
+            return data.rentalId || null;
         } else {
             console.error('Ошибка сохранения аренды:', data.error);
         }
     } catch (err) {
         console.error('Ошибка соединения с сервером:', err);
     }
+    return null;
 }
 
 // Проверка статуса подписки
 async function checkSubscriptionStatus() {
-    if (window.require) {
-        const { ipcRenderer } = require('electron');
-        try {
-            const status = await ipcRenderer.invoke('check-subscription');
-            return status;
-        } catch (error) {
-            console.error('Ошибка проверки подписки:', error);
-            return { isActive: false, expiryDate: null };
-        }
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) return { isActive: false, expiryDate: null };
+    try {
+        const response = await fetch(`${API_BASE}/api/session`, {
+            headers: subscriptionHeaders(sessionToken)
+        });
+        if (!response.ok) return { isActive: false, expiryDate: null };
+        const status = await response.json();
+        return { isActive: status.valid === true, expiryDate: status.expiryDate || null };
+    } catch (error) {
+        console.error('Ошибка проверки подписки:', error);
+        return { isActive: false, expiryDate: null };
     }
-    return { isActive: false, expiryDate: null };
 }
-
-// Переопределяем confirmDeal для отправки уведомления боту
-const originalConfirmDeal = confirmDeal;
-confirmDeal = function() {
-    if(!currentProperty) return;
-    const start = document.getElementById('dealStart').value;
-    const end = document.getElementById('dealEnd').value;
-    const hours = parseInt(document.getElementById('dealHours').value) || 0;
-    const pricePerHour = parseMoney(document.getElementById('dealPricePerHour').value);
-    const total = parseMoney(document.getElementById('dealTotal').value);
-    const comment = document.getElementById('dealComment').value.trim();
-    
-    if(!start || !end || hours <= 0) return;
-    
-    const operation = {
-        id: Date.now(),
-        propertyId: currentProperty.id,
-        propertyName: currentProperty.name,
-        start,
-        end,
-        hours,
-        pricePerHour,
-        total,
-        comment: comment || `Аренда: ${currentProperty.name}`,
-        timestamp: Date.now()
-    };
-    
-    rentOperations.unshift(operation);
-    saveRentOperations();
-    updateRentStats();
-    closeDealModal();
-    
-    // Отправляем уведомление боту
-    notifyBotRentalCreated(operation);
-};
 
 function toggleRentShowAll(){
     rentShowAllMode = !rentShowAllMode;
@@ -3044,88 +3006,9 @@ function toggleRentShowAll(){
 
 
 
-function setRentHistoryFilter(filter){
-    rentHistoryFilter = filter;
-    localStorage.setItem('rentHistoryFilter', filter);
-    document.querySelectorAll('#rentHistoryModal .filter-chip').forEach(btn =>
-        btn.classList.toggle('active', btn.dataset.filter === filter)
-    );
-    updateRentHistoryMonthControls();
-    renderRentHistoryTable();
-    updateRentHistoryTotal();
-}
-
-function updateRentHistoryMonthControls(){
-    const controls = document.getElementById('rentHistoryMonthControls');
-    if(!controls) return;
-    controls.style.display = rentHistoryFilter === 'month' ? 'flex' : 'none';
-}
-
-
-
-function changeRentHistoryMonth(){
-    const monthSelect = document.getElementById('rentHistoryMonthSelect');
-    const yearSelect = document.getElementById('rentHistoryYearSelect');
-    if(!monthSelect || !yearSelect) return;
-    selectedRentHistoryMonth = parseInt(monthSelect.value, 10);
-    selectedRentHistoryYear = parseInt(yearSelect.value, 10);
-    renderRentHistoryTable();
-    updateRentHistoryTotal();
-}
-
-function getFilteredRentHistory(){
-    const now = new Date();
-    return rentOperations.filter(op => {
-        const ts = op.timestamp || Date.now();
-        const d = new Date(ts);
-        if(rentHistoryFilter === 'today'){
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            return ts >= startOfDay.getTime();
-        }
-        if(rentHistoryFilter === 'week'){
-            const weekAgo = new Date(now);
-            weekAgo.setDate(now.getDate() - 6);
-            return ts >= weekAgo.getTime();
-        }
-        if(rentHistoryFilter === 'month'){
-            return d.getMonth() === selectedRentHistoryMonth && d.getFullYear() === selectedRentHistoryYear;
-        }
-        return true;
-    });
-}
-
 // -------------------- История аренды --------------------
-let currentRentHistoryFilter = 'all'; // all, today, week, month
-
-// Функция фильтрации аренд по периоду
-function filterRentOperationsByPeriod(operations, period) {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    return operations.filter(op => {
-        const endDate = new Date(op.endDate || op.end);
-        if (period === 'today') return endDate >= today;
-        if (period === 'week') return endDate >= startOfWeek;
-        if (period === 'month') return endDate >= startOfMonth;
-        return true;
-    });
-}
-
-
 function updateRentHistory() {
     renderRentHistoryTable();
-}
-
-// Обновление активной кнопки периода
-function updateRentHistoryPeriodButtons() {
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        const period = btn.getAttribute('data-period');
-        if (period === currentRentHistoryFilter) btn.classList.add('active');
-        else btn.classList.remove('active');
-    });
 }
 
 // ---------- История аренды ----------
@@ -3300,12 +3183,20 @@ function closeRentHistoryModal() {
 // Вспомогательная функция для экранирования HTML
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
+        if (m === "'") return '&#39;';
         return m;
     });
+}
+
+function safeImageSource(value) {
+    return typeof value === 'string' && /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(value)
+        ? escapeHtml(value)
+        : '';
 }
 
 // Закрытие модального окна по клику вне контента
@@ -3345,7 +3236,7 @@ function openEndRentalModal(){
         div.style.cursor = 'pointer';
         div.style.background = endRentalSelectedId === rental.id ? '#2a3040' : 'transparent';
         div.innerHTML = `
-            <div>${rental.propertyName}</div>
+            <div>${escapeHtml(rental.propertyName)}</div>
             <div>${formatDate(rental.start)}</div>
             <div>${formatDate(rental.end)}</div>
             <div class="money-plus">${moneyWithCurrency(rental.total)}</div>
@@ -3390,7 +3281,7 @@ function selectRentalToEnd(rental){
     document.getElementById('confirmEndRentalBtn').disabled = false;
 }
 
-function confirmEndRental(){
+async function confirmEndRental(){
     if(!endRentalSelectedId) return;
     
     const rental = rentOperations.find(op => op.id === endRentalSelectedId);
@@ -3398,6 +3289,13 @@ function confirmEndRental(){
     
     const actualEnd = document.getElementById('endRentalActualEnd').value;
     if(!actualEnd) return;
+    const start = new Date(rental.start);
+    const plannedEnd = new Date(rental.originalEnd || rental.end);
+    const actualEndDateTime = new Date(actualEnd);
+    if(!Number.isFinite(actualEndDateTime.getTime()) || actualEndDateTime <= start || actualEndDateTime > plannedEnd){
+        alert('Фактическое окончание должно быть позже начала и не позже планового окончания аренды');
+        return;
+    }
     
     // Обновляем аренду
     rental.end = actualEnd;
@@ -3405,15 +3303,11 @@ function confirmEndRental(){
     rental.endedAt = Date.now();
     
     // Пересчитываем сумму (пропорционально времени)
-    const start = new Date(rental.start);
-    const plannedEnd = new Date(rental.originalEnd || rental.end);
-    const actualEndDateTime = new Date(actualEnd);
-    
     const plannedHours = (plannedEnd - start) / (1000 * 60 * 60);
     const actualHours = (actualEndDateTime - start) / (1000 * 60 * 60);
     
     if(plannedHours > 0 && rental.pricePerHour){
-        rental.total = Math.round(actualHours * rental.pricePerHour);
+        rental.total = Math.max(0, Math.round(actualHours * rental.pricePerHour));
     }
     
     saveRentOperations();
@@ -3421,12 +3315,12 @@ function confirmEndRental(){
     updateRentHistoryTotal();
     
     // Отправляем уведомление в бота
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('notify-rental-created', {
+    desktopApi?.saveRental({
         ...rental,
         endedEarly: true,
         actualEnd: actualEnd
     });
+    await notifyRentalEndedToServer(rental, actualEnd);
     
     closeEndRentalModal();
     showSuccessModal('Аренда завершена досрочно!');
@@ -3454,24 +3348,21 @@ document.addEventListener('click', (e) => {
 // Проверка подписки при запуске
 async function checkSubscription() {
     try {
-        const key = localStorage.getItem('subscription_key') || '';
-        if (!key) {
+        const sessionToken = await desktopApi?.getSession();
+        if (!sessionToken) {
             showActivationModal();
             return;
         }
-        const response = await fetch(`${API_BASE}/checkkey`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
+        const response = await fetch(`${API_BASE}/api/session`, {
+            method: 'GET',
+            headers: subscriptionHeaders(sessionToken)
         });
         const result = await response.json();
-        if (result.valid) {
-            // Обновим срок действия, если сервер вернул новую дату
+        if (response.ok && result.valid) {
             localStorage.setItem('subscription_expiry', result.expiryDate);
             hideActivationModal();
         } else {
-            // Ключ невалиден или истёк
-            localStorage.removeItem('subscription_key');
+            await desktopApi?.clearSession();
             localStorage.removeItem('subscription_expiry');
             showActivationModal();
         }
@@ -3500,8 +3391,7 @@ function hideActivationModal() {
 // Открыть бота для получения Telegram ID
 function openTelegramIdBot(event) {
     event.preventDefault();
-    const { shell } = require('electron');
-    shell.openExternal('https://t.me/userinfobot');
+    desktopApi?.openExternal('https://t.me/userinfobot');
 }
 
 // Активация ключа с Telegram ID
@@ -3518,7 +3408,7 @@ async function activateKey() {
     if (!telegramId) return alert('Введите ваш Telegram ID (число)');
 
     try {
-        const response = await fetch(`${API_BASE}/checkkey`, {
+        const response = await fetch(`${API_BASE}/activate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key, telegramId })
@@ -3527,7 +3417,8 @@ async function activateKey() {
 
         if (data.valid) {
             localStorage.setItem('subscription_expiry', data.expiryDate);
-            localStorage.setItem('subscription_key', key);
+            const stored = await desktopApi?.setSession(data.sessionToken);
+            if (!stored) throw new Error('Secure session storage is unavailable');
             localStorage.setItem('telegramId', telegramId);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
             const modal = document.getElementById('activationModal');
@@ -3541,45 +3432,14 @@ async function activateKey() {
     }
 }
 
-// Проверка при загрузке страницы (исправлен ID модального окна)
 window.addEventListener('DOMContentLoaded', () => {
-    console.log('1. DOMContentLoaded сработал');
-    const expiry = localStorage.getItem('subscription_expiry');
-    console.log('2. expiry =', expiry);
-    const modal = document.getElementById('activationModal');
-    console.log('3. modal элемент =', modal);
-    if (modal) {
-        if (expiry && new Date(expiry) > new Date()) {
-            modal.style.display = 'none';
-            console.log('4. Модалка скрыта, подписка активна');
-        } else {
-            modal.style.display = 'flex';
-            console.log('4. Модалка показана (нет даты или истекла)');
-        }
-    } else {
-        console.error('5. Модальное окно не найдено');
-    }
+    checkSubscription();
 });
 
 function checkExistingSubscription() {
-    const expiry = localStorage.getItem('subscription_expiry');
-    const modal = document.getElementById('activationModal');
-    if (!modal) return;
-    if (expiry && new Date(expiry) > new Date()) {
-        modal.style.display = 'none';
-    } else {
-        modal.style.display = 'flex';
-    }
+    return checkSubscription();
 }
-checkExistingSubscription();
 
 function checkLocalSubscription() {
-    const expiry = localStorage.getItem('subscription_expiry');
-    if (expiry && new Date(expiry) > new Date()) {
-        // Подписка активна
-        document.getElementById('activateForm').style.display = 'none';
-    } else {
-        // Подписка истекла или отсутствует
-        document.getElementById('activateForm').style.display = 'block';
-    }
+    return checkSubscription();
 }
