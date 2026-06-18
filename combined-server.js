@@ -11,6 +11,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const TELEGRAM_POLLING = process.env.DISABLE_TELEGRAM_POLLING !== 'true';
+const SUBSCRIPTION_DAYS = 30;
+const RENTAL_CHECK_INTERVAL_MS = 60 * 1000;
 const CORS_ORIGINS = new Set(
     (process.env.CORS_ORIGINS || 'null')
         .split(',')
@@ -188,6 +190,11 @@ function cleanText(value, maxLength) {
     const cleaned = value.trim();
     return cleaned && cleaned.length <= maxLength ? cleaned : null;
 }
+function getSubscriptionExpiry() {
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + SUBSCRIPTION_DAYS);
+    return expiry.toISOString();
+}
 function saveUser(chatId) {
     const f = path.join(DATA_DIR, 'users.json');
     let users = [];
@@ -200,23 +207,25 @@ function saveUser(chatId) {
 function formatDate(iso) { return new Date(iso).toLocaleString('ru-RU'); }
 
 // ========== ПРОВЕРКА АРЕНД (если нужна) ==========
-function checkRentalsAndNotify() {
+async function checkRentalsAndNotify() {
     const data = readRentData();
     const now = new Date();
     let changed = false;
-    (data.rentals || []).forEach(rental => {
+    for (const rental of data.rentals || []) {
         if (!rental.notified && new Date(rental.end) <= now) {
             const message = `🔔 Машина "${rental.propertyName}" вернулась из аренды (${new Date(rental.end).toLocaleString()})`;
-            if (rental.telegramId) {
-                bot.sendMessage(rental.telegramId, message).catch(e => console.error(e));
-                console.log(`Уведомление отправлено пользователю ${rental.telegramId}`);
-            } else {
-                bot.sendMessage(ADMIN_ID, message + ' (у пользователя нет telegramId)').catch(e => console.error(e));
+            const chatId = rental.telegramId || ADMIN_ID;
+            const finalMessage = rental.telegramId ? message : `${message} (у пользователя нет telegramId)`;
+            try {
+                await bot.sendMessage(chatId, finalMessage);
+                rental.notified = true;
+                changed = true;
+                console.log(`Уведомление отправлено пользователю ${chatId}`);
+            } catch (error) {
+                console.error(`Не удалось отправить уведомление пользователю ${chatId}:`, error.message);
             }
-            rental.notified = true;
-            changed = true;
         }
-    });
+    }
     if (changed) writeRentData(data);
 }
 
@@ -246,13 +255,11 @@ bot.onText(/\/generatekey/, (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     const key = `RES-${crypto.randomBytes(12).toString('base64url').toUpperCase()}`;
     const keys = readKeys();
-    const expiry = new Date();
-    expiry.setDate(expiry.getDate() + 30);
     keys.push({
         keyHash: hashKey(key),
         keyHint: key.slice(-6),
         used: false,
-        expiryDate: expiry.toISOString(),
+        expiryDate: null,
         createdAt: new Date().toISOString(),
         telegramId: null
     });
@@ -263,7 +270,7 @@ bot.onText(/\/showallkeys/, (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     const keys = readKeys();
     if (!keys.length) return bot.sendMessage(msg.chat.id, 'Нет ключей');
-    const list = keys.map(k => `...${k.keyHint || 'legacy'} — used:${k.used}, истекает:${k.expiryDate ? new Date(k.expiryDate).toLocaleDateString() : 'нет'}, tgId:${k.telegramId || 'нет'}`).join('\n');
+    const list = keys.map(k => `...${k.keyHint || 'legacy'} — used:${k.used}, истекает:${k.expiryDate ? new Date(k.expiryDate).toLocaleDateString() : 'после активации'}, tgId:${k.telegramId || 'нет'}`).join('\n');
     bot.sendMessage(msg.chat.id, list);
 });
 bot.onText(/\/addkey (.+)/, (msg, match) => {
@@ -274,14 +281,12 @@ bot.onText(/\/addkey (.+)/, (msg, match) => {
         bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
         return;
     }
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 30);
     keys.push({
         keyHash: hashKey(key),
         keyHint: key.slice(-6),
         used: false,
         activatedBy: null,
-        expiryDate: expiryDate.toISOString(),
+        expiryDate: null,
         createdAt: new Date().toISOString(),
         telegramId: null
     });
@@ -314,7 +319,9 @@ bot.onText(/\/resetkey (.+)/, (msg, match) => {
     migrateKeyRecord(found);
     found.used = false;
     found.telegramId = null;
+    found.expiryDate = null;
     delete found.activatedAt;
+    delete found.invalidTelegramId;
     writeKeys(keys);
     bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` сброшен. Теперь его можно использовать повторно.`);
 });
@@ -357,9 +364,9 @@ bot.onText(/\/showrentdata/, (msg) => {
     const info = rentals.map(r => `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified || false}`).join('\n');
     bot.sendMessage(msg.chat.id, `📋 Аренды:\n${info}`);
 });
-bot.onText(/\/forcecheck/, (msg) => {
+bot.onText(/\/forcecheck/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    checkRentalsAndNotify();
+    await checkRentalsAndNotify();
     bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
 });
 
@@ -376,13 +383,14 @@ function activateKey(req, res) {
     const keys = readKeys();
     const found = findKeyRecord(keys, key);
     if (!found) return res.json({ valid: false, message: 'Неверный ключ' });
-    if (!found.expiryDate || new Date(found.expiryDate) <= new Date()) {
+    migrateKeyRecord(found);
+    if (found.used && (!found.expiryDate || new Date(found.expiryDate) <= new Date())) {
         return res.json({ valid: false, message: 'Срок действия ключа истёк' });
     }
     if (found.used && String(found.telegramId) !== String(telegramId)) {
         return res.json({ valid: false, message: 'Ключ уже привязан к другому Telegram ID' });
     }
-    migrateKeyRecord(found);
+    if (!found.used) found.expiryDate = getSubscriptionExpiry();
     found.used = true;
     found.telegramId = String(telegramId);
     found.activatedAt = found.activatedAt || new Date().toISOString();
@@ -401,29 +409,46 @@ app.get('/api/session', requireSession, (req, res) => {
     });
 });
 
-app.post('/api/rental-ended', requireSession, (req, res) => {
-    const { carName, endDate } = req.body;
+app.post('/api/rental-ended', requireSession, async (req, res) => {
+    const { carName, endDate, rentalId } = req.body;
     const safeCarName = cleanText(carName, 100);
     if (!safeCarName || !isValidDate(endDate)) {
         return res.status(400).json({ error: 'Valid carName and endDate are required' });
     }
     const telegramId = req.subscription.payload.telegramId;
     const message = `🚗 Машина "${safeCarName}" вернулась из аренды (${new Date(endDate).toLocaleString()}).`;
-    bot.sendMessage(telegramId, message)
-        .then(() => res.json({ ok: true }))
-        .catch(err => {
-            console.error(`Ошибка отправки пользователю ${telegramId}:`, err.message);
-            if (err.message.includes('chat not found')) {
-                const keys = readKeys();
-                const keyRecord = keys.find(k => k.telegramId == telegramId);
-                if (keyRecord) {
-                    keyRecord.telegramId = null;
-                    writeKeys(keys);
-                    console.log(`Удалён невалидный Telegram ID из записи подписки`);
-                }
+    try {
+        await bot.sendMessage(telegramId, message);
+        if (typeof rentalId === 'string' && rentalId) {
+            const data = readRentData();
+            const rental = (data.rentals || []).find(item =>
+                item.id === rentalId && item.subscriptionId === req.subscription.payload.sub
+            );
+            if (rental) {
+                rental.end = new Date(endDate).toISOString();
+                rental.notified = true;
+                rental.endedEarly = true;
+                writeRentData(data);
             }
-            res.status(500).json({ error: err.message });
-        });
+        }
+        res.json({ ok: true });
+    } catch (err) {
+        console.error(`Ошибка отправки пользователю ${telegramId}:`, err.message);
+        if (err.message.includes('chat not found')) {
+            const keys = readKeys();
+            const keyRecord = keys.find(k => k.keyHash === req.subscription.payload.sub);
+            if (keyRecord) {
+                keyRecord.used = false;
+                keyRecord.telegramId = null;
+                keyRecord.expiryDate = null;
+                keyRecord.invalidTelegramId = telegramId;
+                delete keyRecord.activatedAt;
+                writeKeys(keys);
+                console.log(`Сброшена подписка с невалидным Telegram ID`);
+            }
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/update-telegram-id', requireSession, (req, res) => {
@@ -454,6 +479,7 @@ app.post('/api/add-rental', requireSession, (req, res) => {
         propertyName: safePropertyName,
         start: new Date(start).toISOString(),
         end: new Date(end).toISOString(),
+        originalEnd: new Date(end).toISOString(),
         total: numericTotal,
         telegramId: req.subscription.payload.telegramId,
         subscriptionId: req.subscription.payload.sub
@@ -469,6 +495,14 @@ app.get('/healthz', (req, res) => res.sendStatus(200));
 const PORT = process.env.PORT || 3000;
 if (require.main === module) app.listen(PORT, () => {
     console.log(`Сервер запущен на порту ${PORT}`);
+    setInterval(() => {
+        checkRentalsAndNotify().catch(error => {
+            console.error('Ошибка автоматической проверки аренд:', error);
+        });
+    }, RENTAL_CHECK_INTERVAL_MS);
+    checkRentalsAndNotify().catch(error => {
+        console.error('Ошибка первичной проверки аренд:', error);
+    });
 });
 
 module.exports = app;

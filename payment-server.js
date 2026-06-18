@@ -67,10 +67,14 @@ function readPayments() {
 }
 
 function writePayments(data) {
+    fs.writeFileSync(PAYMENT_FILE, JSON.stringify(data, null, 2));
+}
+
+async function notifyAdmin(message, options = {}) {
     try {
-        fs.writeFileSync(PAYMENT_FILE, JSON.stringify(data, null, 2));
+        await bot.sendMessage(ADMIN_ID, message, options);
     } catch (error) {
-        console.error('Ошибка записи payments.json:', error);
+        console.error('Ошибка отправки Telegram-уведомления:', error.message);
     }
 }
 
@@ -86,7 +90,7 @@ function cleanAmount(value) {
 }
 
 // ✅ SUCCESS URL
-app.post('/success', verifyWebhook, (req, res) => {
+app.post('/success', verifyWebhook, async (req, res) => {
     const { order_id, amount, status } = req.body;
     const orderId = cleanField(order_id, 100);
     const paymentAmount = cleanAmount(amount);
@@ -107,9 +111,14 @@ app.post('/success', verifyWebhook, (req, res) => {
         status: paymentStatus,
         timestamp: new Date().toISOString()
     });
-    writePayments(data);
-    
-    bot.sendMessage(ADMIN_ID, `
+    try {
+        writePayments(data);
+    } catch (error) {
+        console.error('Ошибка записи payments.json:', error);
+        return res.status(500).send('Payment was not saved');
+    }
+
+    await notifyAdmin(`
 💰 **Платеж успешно завершен!**
 📋 Order ID: ${orderId}
 💵 Сумма: ${paymentAmount}
@@ -120,12 +129,12 @@ app.post('/success', verifyWebhook, (req, res) => {
 });
 
 // ❌ FAIL URL
-app.post('/fail', verifyWebhook, (req, res) => {
+app.post('/fail', verifyWebhook, async (req, res) => {
     const { order_id, amount, error } = req.body;
     
     console.log('❌ Неудачный платеж:', { order_id, error });
     
-    bot.sendMessage(ADMIN_ID, `
+    await notifyAdmin(`
 💔 **Платеж не удался!**
 📋 Order ID: ${order_id}
 ❌ Ошибка: ${error || 'Неизвестная ошибка'}
@@ -151,19 +160,24 @@ app.post('/result', verifyWebhook, (req, res) => {
     if (payment) {
         payment.status = paymentStatus;
         payment.transaction_id = transactionId;
-        writePayments(data);
+        try {
+            writePayments(data);
+        } catch (error) {
+            console.error('Ошибка записи payments.json:', error);
+            return res.status(500).send('Payment result was not saved');
+        }
     }
     
     res.status(200).send('OK');
 });
 
 // 💸 REFUND URL (возврат)
-app.post('/refund', verifyWebhook, (req, res) => {
+app.post('/refund', verifyWebhook, async (req, res) => {
     const { order_id, amount, reason } = req.body;
     
     console.log('💸 Возврат:', { order_id, amount, reason });
     
-    bot.sendMessage(ADMIN_ID, `
+    await notifyAdmin(`
 💸 **Возврат платежа!**
 📋 Order ID: ${order_id}
 💵 Сумма: ${amount}
@@ -174,12 +188,12 @@ app.post('/refund', verifyWebhook, (req, res) => {
 });
 
 // ⚡ CHARGEBACK URL
-app.post('/chargeback', verifyWebhook, (req, res) => {
+app.post('/chargeback', verifyWebhook, async (req, res) => {
     const { order_id, amount, reason } = req.body;
     
     console.log('⚡ Чарджбэк:', { order_id, amount, reason });
     
-    bot.sendMessage(ADMIN_ID, `
+    await notifyAdmin(`
 ⚡ **ЧАРДЖБЭК ПОЛУЧЕН!**
 📋 Order ID: ${order_id}
 💵 Сумма: ${amount}

@@ -7,6 +7,16 @@ const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-upda
 const CURRENT_VERSION = '2.0.0';
 const API_BASE = desktopApi?.apiBase || 'https://resellcontrol1bot.onrender.com';
 
+function readStorageJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    console.warn(`Некорректные данные localStorage для ${key}, использую значение по умолчанию`);
+    return fallback;
+  }
+}
+
 function subscriptionHeaders(token) {
   return token
     ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
@@ -37,9 +47,7 @@ let isBeepSequenceActive = false;
 
 // История аренды
 let rentOperations = [];
-const savedRentOps = localStorage.getItem('rentOperations');
-if (savedRentOps) rentOperations = JSON.parse(savedRentOps);
-else rentOperations = [];
+rentOperations = readStorageJson('rentOperations', []);
 
 let rentHistoryFilter = localStorage.getItem('rentHistoryFilter') || 'all';
 let rentHistorySelectedMonth = new Date().getMonth();
@@ -179,17 +187,17 @@ let bpDifficultyFilter = localStorage.getItem('bpDifficultyFilter') || 'all';
 let demorganAtTop = localStorage.getItem('demorganAtTop') === 'true';
 updateInfo = { available: false, latestVersion: CURRENT_VERSION, notes: '', downloadUrl: FALLBACK_DOWNLOAD_URL };
 let operations = [];
-const bpChecked = JSON.parse(localStorage.getItem('bpChecked') || '{}');
-const bpPinned = JSON.parse(localStorage.getItem('bpPinned') || '{}');
-const bpHistory = JSON.parse(localStorage.getItem('bpHistory') || '{}');
-const bpDifficultyMap = JSON.parse(localStorage.getItem('bpDifficultyMap') || '{}');
+const bpChecked = readStorageJson('bpChecked', {});
+const bpPinned = readStorageJson('bpPinned', {});
+const bpHistory = readStorageJson('bpHistory', {});
+const bpDifficultyMap = readStorageJson('bpDifficultyMap', {});
 let online3hCycles = parseInt(localStorage.getItem('online3hCycles') || '0', 10) || 0;
 const hintTimers = {};
 let userTimers = [];
 let userTimerIdSeq = 1;
 
 function loadSavedUserTimers(){
-  const saved = JSON.parse(localStorage.getItem('savedUserTimers') || '[]');
+  const saved = readStorageJson('savedUserTimers', []);
 
   userTimers = saved.map((timer, index) => ({
     id: timer.id || ('savedTimer_' + Date.now() + '_' + index),
@@ -282,7 +290,7 @@ const defaultHintOrder = hintCards.map(h => h.id);
 
 function getSavedHintOrder(){
   try{
-    const saved = JSON.parse(localStorage.getItem('hintOrder') || '[]');
+    const saved = readStorageJson('hintOrder', []);
     if(!Array.isArray(saved) || !saved.length) return [...defaultHintOrder];
 
     const validSaved = saved.filter(id => defaultHintOrder.includes(id));
@@ -536,11 +544,6 @@ function renderOperations(){
     `;
     body.appendChild(row);
   });
-}
-
-function scrollToTopRent(){
-  const el = document.querySelector('.property-list');
-  if(el) el.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function openAddPropertyModal(){
@@ -799,21 +802,6 @@ function newPropertyPhotoFromClipboard(){
   document.addEventListener('paste', handleNewPropertyPaste);
 }
 function handleNewPropertyPaste(e){
-  const items = e.clipboardData?.items || [];
-  for(const item of items){
-    if(item.type.includes('image')){
-      const file = item.getAsFile();
-      const reader = new FileReader();
-      reader.onload = ev => {
-        newPropertyPhoto = ev.target.result;
-        document.getElementById('newPropertyPhotoPreview').innerHTML = `<img src="${safeImageSource(newPropertyPhoto)}">`;
-      };
-      reader.readAsDataURL(file);
-      break;
-    }
-  }
-}
-function handlePropertyPhotoPaste(e){
   const items = e.clipboardData?.items || [];
   for(const item of items){
     if(item.type.includes('image')){
@@ -1119,7 +1107,7 @@ function calculateDealTotal(){
   const total = hours * pricePerHour;
   document.getElementById('dealTotal').value = formatMoney(total);
 }
-function confirmDeal() {
+async function confirmDeal() {
     if(!currentProperty) return;
     const start = document.getElementById('dealStart').value;
     const end = document.getElementById('dealEnd').value;
@@ -1136,6 +1124,7 @@ function confirmDeal() {
         propertyName: currentProperty.name,
         start,
         end,
+        originalEnd: end,
         hours,
         pricePerHour,
         total,
@@ -1147,9 +1136,11 @@ function confirmDeal() {
     saveRentOperations();
     updateRentStats();
     
-    // ======== ВЫЗОВ ДЛЯ ОТПРАВКИ НА СЕРВЕР ========
-    addRentalToServer(operation.propertyName, operation.start, operation.end, operation.total);
-    // =============================================
+    const serverRentalId = await addRentalToServer(operation.propertyName, operation.start, operation.end, operation.total);
+    if (serverRentalId) {
+        operation.serverRentalId = serverRentalId;
+        saveRentOperations();
+    }
     
     closeDealModal();
     
@@ -2903,12 +2894,6 @@ window.addEventListener('load', () => {
   setTimeout(updateScrollToTopButton, 250);
 });
 
-window.addEventListener('load', () => {
-  initScrollToTopButton();
-  setTimeout(updateScrollToTopButton, 50);
-  setTimeout(updateScrollToTopButton, 250);
-});
-
 function scrollToTopRent(){
   const el = document.querySelector('.property-list');
   if(el) el.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2947,12 +2932,36 @@ function notifyBotRentalCreated(rental) {
     desktopApi?.saveRental(rental);
 }
 
+async function notifyRentalEndedToServer(rental, actualEnd) {
+    const sessionToken = await desktopApi?.getSession();
+    if (!sessionToken) return null;
+    try {
+        const response = await fetch(`${API_BASE}/api/rental-ended`, {
+            method: 'POST',
+            headers: subscriptionHeaders(sessionToken),
+            body: JSON.stringify({
+                rentalId: rental.serverRentalId || null,
+                carName: rental.propertyName,
+                endDate: actualEnd
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            console.error('Ошибка уведомления о досрочном завершении:', data.error || response.status);
+        }
+        return data;
+    } catch (error) {
+        console.error('Ошибка соединения с сервером при завершении аренды:', error);
+        return null;
+    }
+}
+
 // Добавление аренды на сервер (для уведомлений в Telegram)
 async function addRentalToServer(propertyName, start, end, total) {
     const sessionToken = await desktopApi?.getSession();
     if (!sessionToken) {
         console.warn('Нет активной сессии для отправки аренды на сервер');
-        return;
+        return null;
     }
     try {
         const response = await fetch(`${API_BASE}/api/add-rental`, {
@@ -2963,12 +2972,14 @@ async function addRentalToServer(propertyName, start, end, total) {
         const data = await response.json();
         if (data.ok) {
             console.log('Аренда сохранена на сервере, id:', data.rentalId);
+            return data.rentalId || null;
         } else {
             console.error('Ошибка сохранения аренды:', data.error);
         }
     } catch (err) {
         console.error('Ошибка соединения с сервером:', err);
     }
+    return null;
 }
 
 // Проверка статуса подписки
@@ -2988,41 +2999,6 @@ async function checkSubscriptionStatus() {
     }
 }
 
-// Переопределяем confirmDeal для отправки уведомления боту
-const originalConfirmDeal = confirmDeal;
-confirmDeal = function() {
-    if(!currentProperty) return;
-    const start = document.getElementById('dealStart').value;
-    const end = document.getElementById('dealEnd').value;
-    const hours = parseInt(document.getElementById('dealHours').value) || 0;
-    const pricePerHour = parseMoney(document.getElementById('dealPricePerHour').value);
-    const total = parseMoney(document.getElementById('dealTotal').value);
-    const comment = document.getElementById('dealComment').value.trim();
-    
-    if(!start || !end || hours <= 0) return;
-    
-    const operation = {
-        id: Date.now(),
-        propertyId: currentProperty.id,
-        propertyName: currentProperty.name,
-        start,
-        end,
-        hours,
-        pricePerHour,
-        total,
-        comment: comment || `Аренда: ${currentProperty.name}`,
-        timestamp: Date.now()
-    };
-    
-    rentOperations.unshift(operation);
-    saveRentOperations();
-    updateRentStats();
-    closeDealModal();
-    
-    // Отправляем уведомление боту
-    notifyBotRentalCreated(operation);
-};
-
 function toggleRentShowAll(){
     rentShowAllMode = !rentShowAllMode;
     updateRentStats();
@@ -3030,88 +3006,9 @@ function toggleRentShowAll(){
 
 
 
-function setRentHistoryFilter(filter){
-    rentHistoryFilter = filter;
-    localStorage.setItem('rentHistoryFilter', filter);
-    document.querySelectorAll('#rentHistoryModal .filter-chip').forEach(btn =>
-        btn.classList.toggle('active', btn.dataset.filter === filter)
-    );
-    updateRentHistoryMonthControls();
-    renderRentHistoryTable();
-    updateRentHistoryTotal();
-}
-
-function updateRentHistoryMonthControls(){
-    const controls = document.getElementById('rentHistoryMonthControls');
-    if(!controls) return;
-    controls.style.display = rentHistoryFilter === 'month' ? 'flex' : 'none';
-}
-
-
-
-function changeRentHistoryMonth(){
-    const monthSelect = document.getElementById('rentHistoryMonthSelect');
-    const yearSelect = document.getElementById('rentHistoryYearSelect');
-    if(!monthSelect || !yearSelect) return;
-    selectedRentHistoryMonth = parseInt(monthSelect.value, 10);
-    selectedRentHistoryYear = parseInt(yearSelect.value, 10);
-    renderRentHistoryTable();
-    updateRentHistoryTotal();
-}
-
-function getFilteredRentHistory(){
-    const now = new Date();
-    return rentOperations.filter(op => {
-        const ts = op.timestamp || Date.now();
-        const d = new Date(ts);
-        if(rentHistoryFilter === 'today'){
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            return ts >= startOfDay.getTime();
-        }
-        if(rentHistoryFilter === 'week'){
-            const weekAgo = new Date(now);
-            weekAgo.setDate(now.getDate() - 6);
-            return ts >= weekAgo.getTime();
-        }
-        if(rentHistoryFilter === 'month'){
-            return d.getMonth() === selectedRentHistoryMonth && d.getFullYear() === selectedRentHistoryYear;
-        }
-        return true;
-    });
-}
-
 // -------------------- История аренды --------------------
-let currentRentHistoryFilter = 'all'; // all, today, week, month
-
-// Функция фильтрации аренд по периоду
-function filterRentOperationsByPeriod(operations, period) {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    return operations.filter(op => {
-        const endDate = new Date(op.endDate || op.end);
-        if (period === 'today') return endDate >= today;
-        if (period === 'week') return endDate >= startOfWeek;
-        if (period === 'month') return endDate >= startOfMonth;
-        return true;
-    });
-}
-
-
 function updateRentHistory() {
     renderRentHistoryTable();
-}
-
-// Обновление активной кнопки периода
-function updateRentHistoryPeriodButtons() {
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        const period = btn.getAttribute('data-period');
-        if (period === currentRentHistoryFilter) btn.classList.add('active');
-        else btn.classList.remove('active');
-    });
 }
 
 // ---------- История аренды ----------
@@ -3384,7 +3281,7 @@ function selectRentalToEnd(rental){
     document.getElementById('confirmEndRentalBtn').disabled = false;
 }
 
-function confirmEndRental(){
+async function confirmEndRental(){
     if(!endRentalSelectedId) return;
     
     const rental = rentOperations.find(op => op.id === endRentalSelectedId);
@@ -3392,6 +3289,13 @@ function confirmEndRental(){
     
     const actualEnd = document.getElementById('endRentalActualEnd').value;
     if(!actualEnd) return;
+    const start = new Date(rental.start);
+    const plannedEnd = new Date(rental.originalEnd || rental.end);
+    const actualEndDateTime = new Date(actualEnd);
+    if(!Number.isFinite(actualEndDateTime.getTime()) || actualEndDateTime <= start || actualEndDateTime > plannedEnd){
+        alert('Фактическое окончание должно быть позже начала и не позже планового окончания аренды');
+        return;
+    }
     
     // Обновляем аренду
     rental.end = actualEnd;
@@ -3399,15 +3303,11 @@ function confirmEndRental(){
     rental.endedAt = Date.now();
     
     // Пересчитываем сумму (пропорционально времени)
-    const start = new Date(rental.start);
-    const plannedEnd = new Date(rental.originalEnd || rental.end);
-    const actualEndDateTime = new Date(actualEnd);
-    
     const plannedHours = (plannedEnd - start) / (1000 * 60 * 60);
     const actualHours = (actualEndDateTime - start) / (1000 * 60 * 60);
     
     if(plannedHours > 0 && rental.pricePerHour){
-        rental.total = Math.round(actualHours * rental.pricePerHour);
+        rental.total = Math.max(0, Math.round(actualHours * rental.pricePerHour));
     }
     
     saveRentOperations();
@@ -3420,6 +3320,7 @@ function confirmEndRental(){
         endedEarly: true,
         actualEnd: actualEnd
     });
+    await notifyRentalEndedToServer(rental, actualEnd);
     
     closeEndRentalModal();
     showSuccessModal('Аренда завершена досрочно!');

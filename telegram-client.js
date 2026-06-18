@@ -5,19 +5,29 @@ class TelegramBotClient {
         this.handlers = [];
         this.offset = 0;
         this.polling = options.polling === true;
+        this.requestTimeoutMs = options.requestTimeoutMs || 45000;
         if (this.polling) setImmediate(() => this.poll());
     }
 
     async request(method, payload = {}) {
+        const timeoutMs = payload.timeout
+            ? Math.max(this.requestTimeoutMs, (Number(payload.timeout) + 5) * 1000)
+            : this.requestTimeoutMs;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
         const response = await fetch(`${this.baseUrl}/${method}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-            throw new Error(result.description || `Telegram API error: ${response.status}`);
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        }).finally(() => clearTimeout(timeout));
+        let result;
+        try {
+            result = await response.json();
+        } catch {
+            throw new Error(`Telegram API returned invalid JSON: ${response.status}`);
         }
+        if (!response.ok || !result.ok) throw new Error(result.description || `Telegram API error: ${response.status}`);
         return result.result;
     }
 

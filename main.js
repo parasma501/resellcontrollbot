@@ -4,18 +4,15 @@ const fs = require('fs');
 
 let mainWindow;
 let cachedSessionToken = '';
+let rentDataFile = '';
 
-const DATA_DIR = path.join(__dirname, 'data');
-const RENT_DATA_FILE = path.join(DATA_DIR, 'rent-data.json');
-
-// Создаём директорию данных если нет
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// Создаём файл rent-data.json если нет
-if (!fs.existsSync(RENT_DATA_FILE)) {
-    fs.writeFileSync(RENT_DATA_FILE, JSON.stringify({ rentals: [], lastNotification: {} }, null, 2));
+function initDataFiles() {
+    const dataDir = path.join(app.getPath('userData'), 'data');
+    rentDataFile = path.join(dataDir, 'rent-data.json');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(rentDataFile)) {
+        fs.writeFileSync(rentDataFile, JSON.stringify({ rentals: [], lastNotification: {} }, null, 2));
+    }
 }
 
 function createWindow() {
@@ -39,13 +36,13 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
-    
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
 }
 
-ipcMain.on('notify-rental-created', (event, rental) => {
+function saveRentalForLocalBot(rental) {
     if (!rental || typeof rental !== 'object') return;
     const propertyName = typeof rental.propertyName === 'string' ? rental.propertyName.trim() : '';
     const start = Date.parse(rental.start);
@@ -57,17 +54,20 @@ ipcMain.on('notify-rental-created', (event, rental) => {
         return;
     }
     try {
-        const data = JSON.parse(fs.readFileSync(RENT_DATA_FILE, 'utf8'));
+        const data = JSON.parse(fs.readFileSync(rentDataFile, 'utf8'));
         data.rentals.push({ ...rental, propertyName, total });
-        fs.writeFileSync(RENT_DATA_FILE, JSON.stringify(data, null, 2));
-        console.log('✅ Данные аренды сохранены для бота');
+        fs.writeFileSync(rentDataFile, JSON.stringify(data, null, 2));
+        console.log('Rental data saved for the local bot');
     } catch (error) {
-        console.error('❌ Ошибка сохранения данных аренды:', error);
+        console.error('Failed to save rental data:', error);
     }
-});
+}
 
 app.whenReady().then(() => {
+    initDataFiles();
     const sessionFile = path.join(app.getPath('userData'), 'subscription.session');
+
+    ipcMain.on('notify-rental-created', (event, rental) => saveRentalForLocalBot(rental));
 
     ipcMain.handle('session:get', () => {
         if (cachedSessionToken) return cachedSessionToken;
@@ -97,17 +97,17 @@ app.whenReady().then(() => {
     });
 
     createWindow();
-    
+
     ipcMain.on('window:minimize', (event) => {
         const win = BrowserWindow.fromWebContents(event.sender);
         if (win) win.minimize();
     });
-    
+
     ipcMain.on('window:close', (event) => {
         const win = BrowserWindow.fromWebContents(event.sender);
         if (win) win.close();
     });
-    
+
     ipcMain.on('open-external', async (event, url) => {
         if (typeof url !== 'string') return;
         try {

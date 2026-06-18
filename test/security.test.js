@@ -27,6 +27,17 @@ fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify([{
 
 const subscriptionApp = require('../combined-server');
 const paymentApp = require('../payment-server');
+const realFetch = global.fetch;
+
+global.fetch = async (url, options) => {
+    if (String(url).startsWith('https://api.telegram.org/')) {
+        return new Response(JSON.stringify({ ok: true, result: {} }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+    return realFetch(url, options);
+};
 
 async function withServer(app, callback) {
     const server = app.listen(0, '127.0.0.1');
@@ -61,6 +72,8 @@ test('subscription API requires a server-issued session', async () => {
         const activated = await activation.json();
         assert.equal(activated.valid, true);
         assert.match(activated.sessionToken, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+        const daysLeft = (new Date(activated.expiryDate) - new Date()) / 86400000;
+        assert.ok(daysLeft > 29 && daysLeft <= 31);
 
         const session = await fetch(`${baseUrl}/api/session`, {
             headers: { Authorization: `Bearer ${activated.sessionToken}` }
@@ -102,5 +115,25 @@ test('payment webhook rejects an invalid signature', async () => {
             body: JSON.stringify({ order_id: '1', amount: 10, status: 'paid' })
         });
         assert.equal(response.status, 401);
+    });
+});
+
+test('payment webhook stores a valid successful payment', async () => {
+    await withServer(paymentApp, async baseUrl => {
+        const body = JSON.stringify({ order_id: 'paid-1', amount: 10, status: 'paid' });
+        const signature = crypto.createHmac('sha256', process.env.PAYMENT_WEBHOOK_SECRET)
+            .update(Buffer.from(body))
+            .digest('hex');
+        const response = await fetch(`${baseUrl}/success`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Webhook-Signature': `sha256=${signature}`
+            },
+            body
+        });
+        assert.equal(response.status, 200);
+        const stored = JSON.parse(fs.readFileSync(path.join(dataDir, 'payments.json'), 'utf8'));
+        assert.equal(stored.payments.some(payment => payment.order_id === 'paid-1'), true);
     });
 });
