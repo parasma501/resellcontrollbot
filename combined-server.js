@@ -257,7 +257,7 @@ bot.onText(/\/generatekey/, (msg) => {
     const keys = readKeys();
     keys.push({
         keyHash: hashKey(key),
-        keyHint: key.slice(-6),
+        keyHint: key.slice(-16),
         used: false,
         expiryDate: null,
         createdAt: new Date().toISOString(),
