@@ -10,8 +10,35 @@
     "start": "node combined-server.js",
     "start:payments": "node payment-server.js",
     "desktop": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win --x64",
     "check": "node --check combined-server.js && node --check payment-server.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check telegram-client.js",
     "test": "node --test --experimental-test-isolation=none"
+  },
+  "build": {
+    "appId": "com.resellcontrol.app",
+    "productName": "Resell Control",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "package.json",
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "dotenv": "^17.4.2",

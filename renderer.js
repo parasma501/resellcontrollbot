@@ -1,5 +1,5 @@
 const APP_EDITION = 'PRO';
-const desktopApi = window.desktopApi;
+var desktopApi = window.desktopApi;
 
 const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
