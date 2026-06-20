@@ -3420,7 +3420,7 @@ async function activateKey() {
                 throw new Error('Сервер активировал ключ, но не вернул sessionToken. Обновите сервер на Render до последней версии.');
             }
             if (!desktopApi?.setSession) {
-                throw new Error('Приложение запущено без Electron API. Запустите установленное приложение, а не index.html в браузере.');
+                throw new Error('Electron API недоступен: preload.js не загрузился или не попал в сборку .exe. Пересоберите приложение целиком из последней версии.');
             }
             localStorage.setItem('subscription_expiry', data.expiryDate);
             const stored = await desktopApi.setSession(data.sessionToken);
