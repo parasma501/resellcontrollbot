@@ -3,6 +3,7 @@ class TelegramBotClient {
         if (!token) throw new Error('Telegram bot token is required');
         this.baseUrl = `https://api.telegram.org/bot${token}`;
         this.handlers = [];
+        this.callbackHandlers = [];
         this.offset = 0;
         this.polling = options.polling === true;
         this.requestTimeoutMs = options.requestTimeoutMs || 45000;
@@ -35,6 +36,18 @@ class TelegramBotClient {
         return this.request('sendMessage', { chat_id: chatId, text, ...options });
     }
 
+    answerCallbackQuery(callbackQueryId, options = {}) {
+        return this.request('answerCallbackQuery', { callback_query_id: callbackQueryId, ...options });
+    }
+
+    editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+        return this.request('editMessageReplyMarkup', {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: replyMarkup
+        });
+    }
+
     deleteWebHook(options = {}) {
         return this.request('deleteWebhook', options);
     }
@@ -47,14 +60,28 @@ class TelegramBotClient {
         this.handlers.push({ regex, handler });
     }
 
-    async dispatch(message) {
-        if (!message || typeof message.text !== 'string') return;
-        for (const { regex, handler } of this.handlers) {
-            regex.lastIndex = 0;
-            const match = regex.exec(message.text);
-            if (match) {
-                await Promise.resolve(handler(message, match)).catch(error => {
-                    console.error('Telegram handler error:', error.message);
+    onCallbackQuery(handler) {
+        this.callbackHandlers.push(handler);
+    }
+
+    async dispatch(update) {
+        const message = update && update.message ? update.message : update;
+        if (message && typeof message.text === 'string') {
+            for (const { regex, handler } of this.handlers) {
+                regex.lastIndex = 0;
+                const match = regex.exec(message.text);
+                if (match) {
+                    await Promise.resolve(handler(message, match)).catch(error => {
+                        console.error('Telegram handler error:', error.message);
+                    });
+                }
+            }
+        }
+
+        if (update && update.callback_query) {
+            for (const handler of this.callbackHandlers) {
+                await Promise.resolve(handler(update.callback_query)).catch(error => {
+                    console.error('Telegram callback handler error:', error.message);
                 });
             }
         }
@@ -66,11 +93,11 @@ class TelegramBotClient {
                 const updates = await this.request('getUpdates', {
                     offset: this.offset,
                     timeout: 30,
-                    allowed_updates: ['message']
+                    allowed_updates: ['message', 'callback_query']
                 });
                 for (const update of updates) {
                     this.offset = Math.max(this.offset, update.update_id + 1);
-                    await this.dispatch(update.message);
+                    await this.dispatch(update);
                 }
             } catch (error) {
                 console.error('Telegram polling error:', error.message);

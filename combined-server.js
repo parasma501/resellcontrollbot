@@ -13,6 +13,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const TELEGRAM_POLLING = process.env.DISABLE_TELEGRAM_POLLING !== 'true';
 const SUBSCRIPTION_DAYS = 30;
 const RENTAL_CHECK_INTERVAL_MS = 60 * 1000;
+const DELETE_CONFIRM_TTL_MS = 5 * 60 * 1000;
 const CORS_ORIGINS = new Set(
     (process.env.CORS_ORIGINS || 'null')
         .split(',')
@@ -30,6 +31,7 @@ const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
 
 // ======== ИНИЦИАЛИЗАЦИЯ БОТА (ОДИН РАЗ) ========
 const bot = new TelegramBot(BOT_TOKEN, { polling: TELEGRAM_POLLING });
+const pendingKeyDeletes = new Map();
 // Удаляем возможный webhook, чтобы избежать конфликта 409
 if (TELEGRAM_POLLING) {
     bot.deleteWebHook({ drop_pending_updates: true }).catch(() => {});
@@ -205,6 +207,20 @@ function saveUser(chatId) {
     }
 }
 function formatDate(iso) { return new Date(iso).toLocaleString('ru-RU'); }
+function pruneExpiredPendingKeyDeletes() {
+    const now = Date.now();
+    for (const [token, pending] of pendingKeyDeletes) {
+        if (pending.expiresAt <= now) pendingKeyDeletes.delete(token);
+    }
+}
+async function clearCallbackButtons(query) {
+    const chatId = query.message?.chat?.id;
+    const messageId = query.message?.message_id;
+    if (!chatId || !messageId) return;
+    await bot.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(error => {
+        console.error('Failed to clear Telegram inline keyboard:', error.message);
+    });
+}
 
 // ========== ПРОВЕРКА АРЕНД (если нужна) ==========
 async function checkRentalsAndNotify() {
@@ -324,6 +340,89 @@ bot.onText(/\/resetkey (.+)/, (msg, match) => {
     delete found.invalidTelegramId;
     writeKeys(keys);
     bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` сброшен. Теперь его можно использовать повторно.`);
+});
+
+bot.onText(/\/deletekey (.+)/, (msg, match) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    pruneExpiredPendingKeyDeletes();
+
+    const key = match[1].trim();
+    const keys = readKeys();
+    const found = findKeyRecord(keys, key);
+    if (!found) return bot.sendMessage(msg.chat.id, '❌ Ключ не найден.');
+
+    const token = crypto.randomBytes(9).toString('base64url');
+    const keyHint = found.keyHint || key.slice(-6);
+    pendingKeyDeletes.set(token, {
+        keyHash: found.keyHash || hashKey(found.key || key),
+        legacyKey: found.key && !found.keyHash ? found.key : null,
+        keyHint,
+        requestedBy: String(msg.chat.id),
+        expiresAt: Date.now() + DELETE_CONFIRM_TTL_MS
+    });
+
+    bot.sendMessage(msg.chat.id, `⚠️ Удалить ключ ...${keyHint} полностью? Это действие нельзя отменить.`, {
+        reply_markup: {
+            inline_keyboard: [[
+                { text: 'Подтвердить', callback_data: `deletekey:confirm:${token}` },
+                { text: 'Отмена', callback_data: `deletekey:cancel:${token}` }
+            ]]
+        }
+    });
+});
+
+bot.onCallbackQuery(async (query) => {
+    const data = String(query.data || '');
+    if (!data.startsWith('deletekey:')) return;
+
+    if (String(query.from?.id || '') !== ADMIN_ID) {
+        await bot.answerCallbackQuery(query.id, {
+            text: 'Недоступно.',
+            show_alert: true
+        }).catch(() => {});
+        return;
+    }
+
+    pruneExpiredPendingKeyDeletes();
+    const [, action, token] = data.split(':');
+    const pending = pendingKeyDeletes.get(token);
+    if (!pending || pending.requestedBy !== String(query.message?.chat?.id || '')) {
+        await bot.answerCallbackQuery(query.id, { text: 'Запрос уже истёк.' }).catch(() => {});
+        await clearCallbackButtons(query);
+        return;
+    }
+
+    if (action === 'cancel') {
+        pendingKeyDeletes.delete(token);
+        await bot.answerCallbackQuery(query.id, { text: 'Удаление отменено.' }).catch(() => {});
+        await clearCallbackButtons(query);
+        await bot.sendMessage(query.message.chat.id, `↩️ Удаление ключа ...${pending.keyHint} отменено.`);
+        return;
+    }
+
+    if (action !== 'confirm') {
+        await bot.answerCallbackQuery(query.id, { text: 'Неизвестное действие.' }).catch(() => {});
+        return;
+    }
+
+    const keys = readKeys();
+    const index = keys.findIndex(record => {
+        if (record.keyHash && record.keyHash === pending.keyHash) return true;
+        return pending.legacyKey && record.key === pending.legacyKey;
+    });
+
+    pendingKeyDeletes.delete(token);
+    await clearCallbackButtons(query);
+    if (index === -1) {
+        await bot.answerCallbackQuery(query.id, { text: 'Ключ уже удалён или не найден.' }).catch(() => {});
+        await bot.sendMessage(query.message.chat.id, `ℹ️ Ключ ...${pending.keyHint} уже удалён или не найден.`);
+        return;
+    }
+
+    keys.splice(index, 1);
+    writeKeys(keys);
+    await bot.answerCallbackQuery(query.id, { text: 'Ключ удалён.' }).catch(() => {});
+    await bot.sendMessage(query.message.chat.id, `✅ Ключ ...${pending.keyHint} полностью удалён.`);
 });
 
 bot.onText(/\/webhookinfo/, async (msg) => {
