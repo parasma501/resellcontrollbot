@@ -11,7 +11,7 @@
     "start:payments": "node payment-server.js",
     "desktop": "electron .",
     "check": "node --check combined-server.js && node --check payment-server.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check telegram-client.js",
-    "test": "node --test --test-isolation=none"
+    "test": "node --test --experimental-test-isolation=none"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

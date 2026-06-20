@@ -6,6 +6,10 @@ let mainWindow;
 let cachedSessionToken = '';
 let rentDataFile = '';
 
+function isValidSessionToken(token) {
+    return typeof token === 'string' && token.length >= 40 && token.length <= 4096;
+}
+
 function initDataFiles() {
     const dataDir = path.join(app.getPath('userData'), 'data');
     rentDataFile = path.join(dataDir, 'rent-data.json');
@@ -71,23 +75,41 @@ app.whenReady().then(() => {
 
     ipcMain.handle('session:get', () => {
         if (cachedSessionToken) return cachedSessionToken;
-        if (!safeStorage.isEncryptionAvailable() || !fs.existsSync(sessionFile)) return '';
+        if (!fs.existsSync(sessionFile)) return '';
         try {
-            cachedSessionToken = safeStorage.decryptString(fs.readFileSync(sessionFile));
-            return cachedSessionToken;
+            const stored = fs.readFileSync(sessionFile);
+            try {
+                const parsed = JSON.parse(stored.toString('utf8'));
+                if (parsed.storage === 'plain' && isValidSessionToken(parsed.token)) {
+                    cachedSessionToken = parsed.token;
+                    return cachedSessionToken;
+                }
+            } catch {
+                // Not a plain fallback file; try Electron safeStorage below.
+            }
+            if (!safeStorage.isEncryptionAvailable()) return '';
+            cachedSessionToken = safeStorage.decryptString(stored);
+            return isValidSessionToken(cachedSessionToken) ? cachedSessionToken : '';
         } catch {
             return '';
         }
     });
 
     ipcMain.handle('session:set', (event, token) => {
-        if (typeof token !== 'string' || token.length < 40 || token.length > 4096 ||
-            !safeStorage.isEncryptionAvailable()) {
+        if (!isValidSessionToken(token)) return false;
+        cachedSessionToken = token;
+        try {
+            if (safeStorage.isEncryptionAvailable()) {
+                fs.writeFileSync(sessionFile, safeStorage.encryptString(token));
+            } else {
+                fs.writeFileSync(sessionFile, JSON.stringify({ storage: 'plain', token }));
+            }
+            return true;
+        } catch (error) {
+            cachedSessionToken = '';
+            console.error('Failed to save subscription session:', error);
             return false;
         }
-        cachedSessionToken = token;
-        fs.writeFileSync(sessionFile, safeStorage.encryptString(token));
-        return true;
     });
 
     ipcMain.handle('session:clear', () => {

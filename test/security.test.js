@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const TelegramBotClient = require('../telegram-client');
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resell-security-'));
 process.env.BOT_TOKEN = 'test-token';
@@ -136,4 +137,24 @@ test('payment webhook stores a valid successful payment', async () => {
         const stored = JSON.parse(fs.readFileSync(path.join(dataDir, 'payments.json'), 'utf8'));
         assert.equal(stored.payments.some(payment => payment.order_id === 'paid-1'), true);
     });
+});
+
+test('telegram client dispatches callback queries', async () => {
+    const bot = new TelegramBotClient('test-token', { polling: false });
+    let callbackData = null;
+
+    bot.onCallbackQuery(query => {
+        callbackData = query.data;
+    });
+
+    await bot.dispatch({
+        callback_query: {
+            id: 'callback-1',
+            data: 'deletekey:cancel:test',
+            from: { id: 123456789 },
+            message: { chat: { id: 123456789 }, message_id: 1 }
+        }
+    });
+
+    assert.equal(callbackData, 'deletekey:cancel:test');
 });
