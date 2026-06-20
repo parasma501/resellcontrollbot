@@ -3416,9 +3416,15 @@ async function activateKey() {
         const data = await response.json();
 
         if (data.valid) {
+            if (!data.sessionToken) {
+                throw new Error('Сервер активировал ключ, но не вернул sessionToken. Обновите сервер на Render до последней версии.');
+            }
+            if (!desktopApi?.setSession) {
+                throw new Error('Приложение запущено без Electron API. Запустите установленное приложение, а не index.html в браузере.');
+            }
             localStorage.setItem('subscription_expiry', data.expiryDate);
-            const stored = await desktopApi?.setSession(data.sessionToken);
-            if (!stored) throw new Error('Secure session storage is unavailable');
+            const stored = await desktopApi.setSession(data.sessionToken);
+            if (!stored) throw new Error('Не удалось сохранить сессию локально. Обновите приложение до последней сборки.');
             localStorage.setItem('telegramId', telegramId);
             alert('Подписка активирована до ' + new Date(data.expiryDate).toLocaleDateString());
             const modal = document.getElementById('activationModal');
@@ -3428,7 +3434,7 @@ async function activateKey() {
         }
     } catch (err) {
         console.error(err);
-        alert('Ошибка соединения с сервером');
+        alert(err.message || 'Ошибка соединения с сервером');
     }
 }
 
