@@ -4,7 +4,7 @@ var desktopApi = window.desktopApi;
 const DISCORD_URL = 'https://discord.gg/EfndfUnApv';
 const VERSION_URL = 'https://raw.githubusercontent.com/parasma501/resell-control-update-pro/main/version.json';
 const FALLBACK_DOWNLOAD_URL = 'https://github.com/parasma501/resell-control-update-pro/releases';
-const CURRENT_VERSION = '2.0.0';
+const CURRENT_VERSION = desktopApi?.appVersion || '0.0.0';
 const API_BASE = desktopApi?.apiBase || 'https://resellcontrollbot.onrender.com';
 
 function readStorageJson(key, fallback) {
