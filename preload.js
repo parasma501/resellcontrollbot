@@ -1,9 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { version } = require('./package.json');
 
 const DEFAULT_API_BASE = 'https://resellcontrollbot.onrender.com';
 const env = typeof process === 'object' && process && process.env ? process.env : {};
 
 contextBridge.exposeInMainWorld('desktopApi', Object.freeze({
+    appVersion: version,
     apiBase: env.API_BASE || DEFAULT_API_BASE,
     minimize: () => ipcRenderer.send('window:minimize'),
     close: () => ipcRenderer.send('window:close'),
