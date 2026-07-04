@@ -1,31 +1,57 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { DataType, newDb } = require('pg-mem');
 const TelegramBotClient = require('../telegram-client');
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resell-security-'));
 process.env.BOT_TOKEN = 'test-token';
 process.env.PAYMENT_BOT_TOKEN = 'test-payment-token';
 process.env.ADMIN_ID = '123456789';
 process.env.SESSION_SECRET = 'a'.repeat(64);
 process.env.PAYMENT_WEBHOOK_SECRET = 'b'.repeat(64);
-process.env.DATA_DIR = dataDir;
+process.env.DATABASE_URL = 'postgresql://test';
 process.env.DISABLE_TELEGRAM_POLLING = 'true';
 process.env.CORS_ORIGINS = 'null';
 
-const key = 'RES-SECURITY-TEST';
-fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify([{
-    keyHash: crypto.createHash('sha256').update(key).digest('hex'),
-    keyHint: 'TYTEST',
-    used: false,
-    expiryDate: new Date(Date.now() + 86400000).toISOString(),
-    createdAt: new Date().toISOString(),
-    telegramId: null
-}], null, 2));
+const memoryDatabase = newDb();
+memoryDatabase.public.registerFunction({
+    name: 'octet_length',
+    args: [DataType.bytea],
+    returns: DataType.integer,
+    implementation: value => value.length
+});
+memoryDatabase.public.registerFunction({
+    name: 'char_length',
+    args: [DataType.text],
+    returns: DataType.integer,
+    implementation: value => value.length
+});
+memoryDatabase.public.registerFunction({
+    name: 'decode',
+    args: [DataType.text, DataType.text],
+    returns: DataType.bytea,
+    implementation: (value, encoding) => Buffer.from(value, encoding)
+});
+memoryDatabase.public.registerFunction({
+    name: 'pg_advisory_lock',
+    args: [DataType.bigint],
+    returns: DataType.bool,
+    implementation: () => true
+});
+memoryDatabase.public.registerFunction({
+    name: 'pg_advisory_unlock',
+    args: [DataType.bigint],
+    returns: DataType.bool,
+    implementation: () => true
+});
+const adapter = memoryDatabase.adapters.createPg();
+const testPool = new adapter.Pool();
 
+const database = require('../db');
+database.setPoolForTests(testPool);
+
+const keysRepository = require('../repositories/keys');
+const rentalsRepository = require('../repositories/rentals');
 const subscriptionApp = require('../combined-server');
 const paymentApp = require('../payment-server');
 const realFetch = global.fetch;
@@ -51,7 +77,26 @@ async function withServer(app, callback) {
     }
 }
 
+test.before(async () => {
+    await database.initializeDatabase();
+});
+
+test.beforeEach(async () => {
+    await database.query('DELETE FROM rentals');
+    await database.query('DELETE FROM payments');
+    await database.query('DELETE FROM telegram_users');
+    await database.query('DELETE FROM subscription_keys');
+});
+
+test.after(async () => {
+    global.fetch = realFetch;
+    await database.closeDatabase();
+});
+
 test('subscription API requires a server-issued session', async () => {
+    const key = 'RES-SECURITY-TEST';
+    await keysRepository.addUnusedKey(key);
+
     await withServer(subscriptionApp, async baseUrl => {
         const unauthenticated = await fetch(`${baseUrl}/api/add-rental`, {
             method: 'POST',
@@ -95,6 +140,7 @@ test('subscription API requires a server-issued session', async () => {
             })
         });
         assert.equal(rental.status, 200);
+        assert.equal((await database.query('SELECT COUNT(*)::INT AS count FROM rentals')).rows[0].count, 1);
 
         const rebound = await fetch(`${baseUrl}/activate`, {
             method: 'POST',
@@ -103,6 +149,49 @@ test('subscription API requires a server-issued session', async () => {
         });
         assert.equal((await rebound.json()).valid, false);
     });
+});
+
+test('deleting a key revokes its session and cascades its rentals', async () => {
+    const key = 'RES-DELETE-CASCADE';
+    await keysRepository.addUnusedKey(key);
+    const activated = await keysRepository.activateKey(key, '123456789', 30);
+    await rentalsRepository.addRental({
+        id: crypto.randomUUID(),
+        subscriptionKeyId: activated.record.id,
+        propertyName: 'Car',
+        start: new Date(),
+        end: new Date(Date.now() + 3600000),
+        originalEnd: new Date(Date.now() + 3600000),
+        total: 100,
+        telegramId: '123456789'
+    });
+
+    assert.equal(await keysRepository.deleteByHash(activated.record.keyHash), true);
+    assert.equal((await database.query('SELECT COUNT(*)::INT AS count FROM rentals')).rows[0].count, 0);
+});
+
+test('/restorekey restores an active subscription without storing the plaintext key', async () => {
+    const key = 'RES-RESTORED-KEY';
+    const nextYear = new Date().getUTCFullYear() + 1;
+
+    await subscriptionApp.locals.bot.dispatch({
+        message: {
+            text: `/restorekey ${key} 123456789 ${nextYear}-12-31`,
+            chat: { id: 123456789 }
+        }
+    });
+
+    const restored = await keysRepository.findByPlainKey(key);
+    assert.equal(restored.used, true);
+    assert.equal(restored.telegramId, '123456789');
+    assert.equal(restored.keyHint, 'ED-KEY');
+
+    const stored = await database.query(
+        'SELECT key_hash, key_hint FROM subscription_keys WHERE id = $1',
+        [restored.id]
+    );
+    assert.equal(stored.rows[0].key_hash.toString('hex'), keysRepository.hashKey(key));
+    assert.equal(Object.hasOwn(stored.rows[0], 'key'), false);
 });
 
 test('payment webhook rejects an invalid signature', async () => {
@@ -119,13 +208,13 @@ test('payment webhook rejects an invalid signature', async () => {
     });
 });
 
-test('payment webhook stores a valid successful payment', async () => {
+test('payment webhook stores a valid successful payment once', async () => {
     await withServer(paymentApp, async baseUrl => {
         const body = JSON.stringify({ order_id: 'paid-1', amount: 10, status: 'paid' });
         const signature = crypto.createHmac('sha256', process.env.PAYMENT_WEBHOOK_SECRET)
             .update(Buffer.from(body))
             .digest('hex');
-        const response = await fetch(`${baseUrl}/success`, {
+        const request = () => fetch(`${baseUrl}/success`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -133,9 +222,15 @@ test('payment webhook stores a valid successful payment', async () => {
             },
             body
         });
-        assert.equal(response.status, 200);
-        const stored = JSON.parse(fs.readFileSync(path.join(dataDir, 'payments.json'), 'utf8'));
-        assert.equal(stored.payments.some(payment => payment.order_id === 'paid-1'), true);
+
+        assert.equal((await request()).status, 200);
+        assert.equal((await request()).status, 200);
+        const stored = await database.query(
+            'SELECT order_id, amount, status FROM payments WHERE order_id = $1',
+            ['paid-1']
+        );
+        assert.equal(stored.rowCount, 1);
+        assert.equal(stored.rows[0].status, 'paid');
     });
 });
 

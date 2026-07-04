@@ -5,30 +5,20 @@ class TelegramBotClient {
         this.handlers = [];
         this.callbackHandlers = [];
         this.offset = 0;
-        this.polling = options.polling === true;
-        this.requestTimeoutMs = options.requestTimeoutMs || 45000;
-        if (this.polling) setImmediate(() => this.poll());
+        this.polling = false;
+        if (options.polling === true) this.startPolling();
     }
 
     async request(method, payload = {}) {
-        const timeoutMs = payload.timeout
-            ? Math.max(this.requestTimeoutMs, (Number(payload.timeout) + 5) * 1000)
-            : this.requestTimeoutMs;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
         const response = await fetch(`${this.baseUrl}/${method}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: controller.signal
-        }).finally(() => clearTimeout(timeout));
-        let result;
-        try {
-            result = await response.json();
-        } catch {
-            throw new Error(`Telegram API returned invalid JSON: ${response.status}`);
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+            throw new Error(result.description || `Telegram API error: ${response.status}`);
         }
-        if (!response.ok || !result.ok) throw new Error(result.description || `Telegram API error: ${response.status}`);
         return result.result;
     }
 
@@ -65,7 +55,7 @@ class TelegramBotClient {
     }
 
     async dispatch(update) {
-        const message = update && update.message ? update.message : update;
+        const message = update?.message || update;
         if (message && typeof message.text === 'string') {
             for (const { regex, handler } of this.handlers) {
                 regex.lastIndex = 0;
@@ -78,13 +68,23 @@ class TelegramBotClient {
             }
         }
 
-        if (update && update.callback_query) {
+        if (update?.callback_query) {
             for (const handler of this.callbackHandlers) {
                 await Promise.resolve(handler(update.callback_query)).catch(error => {
                     console.error('Telegram callback handler error:', error.message);
                 });
             }
         }
+    }
+
+    startPolling() {
+        if (this.polling) return;
+        this.polling = true;
+        setImmediate(() => this.poll());
+    }
+
+    stopPolling() {
+        this.polling = false;
     }
 
     async poll() {

@@ -3,8 +3,10 @@ require('dotenv').config({ quiet: true });
 const TelegramBot = require('./telegram-client');
 const express = require('express');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const { closeDatabase, initializeDatabase, query } = require('./db');
+const keysRepository = require('./repositories/keys');
+const rentalsRepository = require('./repositories/rentals');
+const usersRepository = require('./repositories/users');
 
 // ======== КОНФИГУРАЦИЯ (ДО СОЗДАНИЯ БОТА) ========
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -21,23 +23,15 @@ const CORS_ORIGINS = new Set(
         .filter(Boolean)
 );
 
-if (!BOT_TOKEN || !ADMIN_ID || !SESSION_SECRET || SESSION_SECRET.length < 32) {
-    throw new Error('BOT_TOKEN, ADMIN_ID and SESSION_SECRET (32+ characters) must be set');
+if (!BOT_TOKEN || !ADMIN_ID || !SESSION_SECRET || SESSION_SECRET.length < 32 || !process.env.DATABASE_URL) {
+    throw new Error('BOT_TOKEN, ADMIN_ID, DATABASE_URL and SESSION_SECRET (32+ characters) must be set');
 }
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const PAYMENT_LINK = 'https://yoomoney.ru/to/4100119530608840';
 
 // ======== ИНИЦИАЛИЗАЦИЯ БОТА (ОДИН РАЗ) ========
-const bot = new TelegramBot(BOT_TOKEN, { polling: TELEGRAM_POLLING });
+const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 const pendingKeyDeletes = new Map();
-// Удаляем возможный webhook, чтобы избежать конфликта 409
-if (TELEGRAM_POLLING) {
-    bot.deleteWebHook({ drop_pending_updates: true }).catch(() => {});
-}
-
-console.log('🤖 Бот запущен!');
 
 // ======== EXPRESS ========
 const app = express();
@@ -90,50 +84,6 @@ app.use('/api', createRateLimiter({ windowMs: 15 * 60 * 1000, max: 120 }));
 const activationLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 
 // ========== ФУНКЦИИ РАБОТЫ С ДАННЫМИ ==========
-function readRentData() {
-    try {
-        const f = path.join(DATA_DIR, 'rent-data.json');
-        return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : { rentals: [] };
-    } catch(e) { return { rentals: [] }; }
-}
-function writeRentData(data) {
-    fs.writeFileSync(path.join(DATA_DIR, 'rent-data.json'), JSON.stringify(data, null, 2));
-}
-function readKeys() {
-    try {
-        const f = path.join(DATA_DIR, 'keys.json');
-        if (fs.existsSync(f)) {
-            const d = JSON.parse(fs.readFileSync(f, 'utf8'));
-            return Array.isArray(d) ? d : (d.keys && Array.isArray(d.keys) ? d.keys : []);
-        }
-    } catch(e) {}
-    return [];
-}
-function writeKeys(keys) {
-    fs.writeFileSync(path.join(DATA_DIR, 'keys.json'), JSON.stringify(keys, null, 2));
-}
-function hashKey(key) {
-    return crypto.createHash('sha256').update(key).digest('hex');
-}
-function findKeyRecord(keys, key) {
-    if (typeof key !== 'string' || key.length < 8 || key.length > 128) return null;
-    const candidateHash = hashKey(key);
-    return keys.find(record => {
-        if (record.keyHash) {
-            const stored = Buffer.from(record.keyHash, 'hex');
-            const candidate = Buffer.from(candidateHash, 'hex');
-            return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
-        }
-        return record.key === key;
-    }) || null;
-}
-function migrateKeyRecord(record) {
-    if (record.key && !record.keyHash) {
-        record.keyHash = hashKey(record.key);
-        delete record.key;
-    }
-    return record;
-}
 function encodeBase64Url(value) {
     return Buffer.from(value).toString('base64url');
 }
@@ -169,11 +119,11 @@ function verifySession(token) {
         return null;
     }
 }
-function requireSession(req, res, next) {
+async function requireSession(req, res, next) {
     const authorization = req.get('Authorization') || '';
     const payload = verifySession(authorization.startsWith('Bearer ') ? authorization.slice(7) : '');
     if (!payload) return res.status(401).json({ error: 'Valid session required' });
-    const record = readKeys().find(key => key.keyHash === payload.sub);
+    const record = await keysRepository.findByHashHex(payload.sub);
     if (!record || !record.used || String(record.telegramId) !== payload.telegramId ||
         !record.expiryDate || new Date(record.expiryDate) <= new Date()) {
         return res.status(401).json({ error: 'Session expired or revoked' });
@@ -192,21 +142,29 @@ function cleanText(value, maxLength) {
     const cleaned = value.trim();
     return cleaned && cleaned.length <= maxLength ? cleaned : null;
 }
-function getSubscriptionExpiry() {
-    const expiry = new Date();
-    expiry.setDate(expiry.getDate() + SUBSCRIPTION_DAYS);
-    return expiry.toISOString();
-}
-function saveUser(chatId) {
-    const f = path.join(DATA_DIR, 'users.json');
-    let users = [];
-    if (fs.existsSync(f)) users = JSON.parse(fs.readFileSync(f, 'utf8'));
-    if (!users.includes(chatId)) {
-        users.push(chatId);
-        fs.writeFileSync(f, JSON.stringify(users, null, 2));
-    }
-}
 function formatDate(iso) { return new Date(iso).toLocaleString('ru-RU'); }
+function parseRestoreExpiry(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const expiry = new Date(`${value}T23:59:59.999+03:00`);
+    if (!Number.isFinite(expiry.getTime())) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    return expiry.getUTCFullYear() === year &&
+        expiry.getUTCMonth() + 1 === month &&
+        expiry.getUTCDate() === day
+        ? expiry
+        : null;
+}
+async function sendLongMessage(chatId, lines) {
+    let chunk = '';
+    for (const line of lines) {
+        if (chunk && chunk.length + line.length + 1 > 3500) {
+            await bot.sendMessage(chatId, chunk);
+            chunk = '';
+        }
+        chunk += `${chunk ? '\n' : ''}${line}`;
+    }
+    if (chunk) await bot.sendMessage(chatId, chunk);
+}
 function pruneExpiredPendingKeyDeletes() {
     const now = Date.now();
     for (const [token, pending] of pendingKeyDeletes) {
@@ -224,144 +182,131 @@ async function clearCallbackButtons(query) {
 
 // ========== ПРОВЕРКА АРЕНД (если нужна) ==========
 async function checkRentalsAndNotify() {
-    const data = readRentData();
-    const now = new Date();
-    let changed = false;
-    for (const rental of data.rentals || []) {
-        if (!rental.notified && new Date(rental.end) <= now) {
-            const message = `🔔 Машина "${rental.propertyName}" вернулась из аренды (${new Date(rental.end).toLocaleString()})`;
-            const chatId = rental.telegramId || ADMIN_ID;
-            const finalMessage = rental.telegramId ? message : `${message} (у пользователя нет telegramId)`;
-            try {
-                await bot.sendMessage(chatId, finalMessage);
-                rental.notified = true;
-                changed = true;
-                console.log(`Уведомление отправлено пользователю ${chatId}`);
-            } catch (error) {
-                console.error(`Не удалось отправить уведомление пользователю ${chatId}:`, error.message);
-            }
+    const rentals = await rentalsRepository.listPendingNotifications();
+    for (const rental of rentals) {
+        const message = `🔔 Машина "${rental.propertyName}" вернулась из аренды (${new Date(rental.end).toLocaleString()})`;
+        try {
+            await bot.sendMessage(rental.telegramId, message);
+            await rentalsRepository.markNotified(rental.id);
+            console.log(`Уведомление отправлено пользователю ${rental.telegramId}`);
+        } catch (error) {
+            console.error(`Не удалось отправить уведомление пользователю ${rental.telegramId}:`, error.message);
         }
     }
-    if (changed) writeRentData(data);
 }
 
 // ========== КОМАНДЫ БОТА ==========
 const commands = ['/start', '/help', '/status', '/payments', '/clue', '/pay'];
 commands.forEach(cmd => {
-    bot.onText(new RegExp(cmd), (msg) => {
-        saveUser(msg.chat.id);
+    bot.onText(new RegExp(`^${cmd}(?:@\\w+)?$`), async (msg) => {
+        await usersRepository.saveUser(msg.chat.id);
         if (cmd === '/start') {
-            bot.sendMessage(msg.chat.id, `👋 Добро пожаловать! Команды: /help, /clue, /payments`);
+            await bot.sendMessage(msg.chat.id, `👋 Добро пожаловать! Команды: /help, /clue, /payments`);
         } else if (cmd === '/help') {
-            bot.sendMessage(msg.chat.id, `/start - приветствие\n/clue - как получить ключ\n/payments - платежи\n/generatekey (админ)`);
+            await bot.sendMessage(msg.chat.id, `/start - приветствие\n/clue - как получить ключ\n/payments - платежи\n/generatekey (админ)`);
         } else if (cmd === '/status') {
-            bot.sendMessage(msg.chat.id, `✅ Подписка активна (проверка через приложение).`);
+            await bot.sendMessage(msg.chat.id, `✅ Подписка активна (проверка через приложение).`);
         } else if (cmd === '/payments') {
-            bot.sendMessage(msg.chat.id, '📜 История платежей: обратитесь к администратору.');
+            await bot.sendMessage(msg.chat.id, '📜 История платежей: обратитесь к администратору.');
         } else if (cmd === '/clue') {
-            bot.sendMessage(msg.chat.id, `💳 Оплатите ${PAYMENT_LINK}, затем напишите в Discord: https://discord.gg/EfndfUnApv`);
+            await bot.sendMessage(msg.chat.id, `💳 Оплатите ${PAYMENT_LINK}, затем напишите в Discord: https://discord.gg/EfndfUnApv`);
         } else if (cmd === '/pay') {
-            bot.sendMessage(msg.chat.id, `💰 Оплата: ${PAYMENT_LINK}`);
+            await bot.sendMessage(msg.chat.id, `💰 Оплата: ${PAYMENT_LINK}`);
         }
     });
 });
 
 // Админ команды
-bot.onText(/\/generatekey/, (msg) => {
+bot.onText(/^\/generatekey(?:@\w+)?$/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    const key = `RES-${crypto.randomBytes(12).toString('base64url').toUpperCase()}`;
-    const keys = readKeys();
-    keys.push({
-        keyHash: hashKey(key),
-        keyHint: key.slice(-6),
-        used: false,
-        expiryDate: null,
-        createdAt: new Date().toISOString(),
-        telegramId: null
-    });
-    writeKeys(keys);
-    bot.sendMessage(msg.chat.id, `✅ Новый ключ: \`${key}\``, { parse_mode: 'Markdown' });
+    let key;
+    let result;
+    do {
+        key = `RES-${crypto.randomBytes(12).toString('base64url').toUpperCase()}`;
+        result = await keysRepository.addUnusedKey(key);
+    } while (result.status === 'exists');
+    await bot.sendMessage(msg.chat.id, `✅ Новый ключ: ${key}`);
 });
-bot.onText(/\/showallkeys/, (msg) => {
+bot.onText(/^\/showallkeys(?:@\w+)?$/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    const keys = readKeys();
+    const keys = await keysRepository.listKeys();
     if (!keys.length) return bot.sendMessage(msg.chat.id, 'Нет ключей');
-    const list = keys.map(k => `...${k.keyHint || 'legacy'} — used:${k.used}, истекает:${k.expiryDate ? new Date(k.expiryDate).toLocaleDateString() : 'после активации'}, tgId:${k.telegramId || 'нет'}`).join('\n');
-    bot.sendMessage(msg.chat.id, list);
+    await sendLongMessage(msg.chat.id, keys.map(k =>
+        `...${k.keyHint} — used:${k.used}, истекает:${k.expiryDate ? new Date(k.expiryDate).toLocaleDateString('ru-RU') : 'после активации'}, tgId:${k.telegramId || 'нет'}`
+    ));
 });
-bot.onText(/\/addkey (.+)/, (msg, match) => {
+bot.onText(/^\/addkey\s+(.+)$/, async (msg, match) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     const key = match[1].trim();
-    const keys = readKeys();
-    if (findKeyRecord(keys, key)) {
-        bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует');
-        return;
+    const result = await keysRepository.addUnusedKey(key);
+    if (result.status === 'invalid') {
+        return bot.sendMessage(msg.chat.id, '❌ Ключ должен содержать от 8 до 128 символов.');
     }
-    keys.push({
-        keyHash: hashKey(key),
-        keyHint: key.slice(-6),
-        used: false,
-        activatedBy: null,
-        expiryDate: null,
-        createdAt: new Date().toISOString(),
-        telegramId: null
-    });
-    writeKeys(keys);
-    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` добавлен в базу.`);
+    if (result.status === 'exists') {
+        return bot.sendMessage(msg.chat.id, '❌ Такой ключ уже существует.');
+    }
+    await bot.sendMessage(msg.chat.id, `✅ Ключ ${key} добавлен в базу.`);
 });
-bot.onText(/\/clearoldrentals/, (msg) => {
+
+bot.onText(/^\/restorekey\s+(\S+)\s+(\d+)\s+(\d{4}-\d{2}-\d{2})$/, async (msg, match) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    const data = readRentData();
-    const now = new Date();
-    const originalCount = data.rentals?.length || 0;
-    data.rentals = (data.rentals || []).filter(r => new Date(r.end) > now);
-    writeRentData(data);
-    const removed = originalCount - data.rentals.length;
-    bot.sendMessage(msg.chat.id, `🧹 Очищено ${removed} завершённых аренд. Осталось активных: ${data.rentals.length}.`);
+    const [, key, telegramId, expiryText] = match;
+    const expiry = parseRestoreExpiry(expiryText);
+    if (!isValidTelegramId(telegramId)) {
+        return bot.sendMessage(msg.chat.id, '❌ Некорректный Telegram ID.');
+    }
+    if (!expiry || expiry <= new Date()) {
+        return bot.sendMessage(msg.chat.id, '❌ Укажите будущую дату в формате ГГГГ-ММ-ДД.');
+    }
+    const result = await keysRepository.restoreKey(key, telegramId, expiry);
+    if (result.status === 'invalid') {
+        return bot.sendMessage(msg.chat.id, '❌ Ключ должен содержать от 8 до 128 символов без пробелов.');
+    }
+    await bot.sendMessage(
+        msg.chat.id,
+        `✅ Ключ ...${result.record.keyHint} восстановлен для Telegram ID ${telegramId} до ${expiryText} включительно.`
+    );
 });
-bot.onText(/\/clearallrentals/, (msg) => {
+
+bot.onText(/^\/clearoldrentals(?:@\w+)?$/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    writeRentData({ rentals: [] });
-    bot.sendMessage(msg.chat.id, '✅ Все аренды удалены.');
+    const removed = await rentalsRepository.clearFinishedRentals();
+    await bot.sendMessage(msg.chat.id, `🧹 Очищено завершённых аренд: ${removed}.`);
+});
+bot.onText(/^\/clearallrentals(?:@\w+)?$/, async (msg) => {
+    if (String(msg.chat.id) !== ADMIN_ID) return;
+    const removed = await rentalsRepository.clearAllRentals();
+    await bot.sendMessage(msg.chat.id, `✅ Все аренды удалены (${removed}).`);
 });
 
 // Команда для сброса ключа (только для админа)
-bot.onText(/\/resetkey (.+)/, (msg, match) => {
+bot.onText(/^\/resetkey\s+(.+)$/, async (msg, match) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     const key = match[1].trim();
-    const keys = readKeys();
-    const found = findKeyRecord(keys, key);
-    if (!found) return bot.sendMessage(msg.chat.id, '❌ Ключ не найден.');
-    migrateKeyRecord(found);
-    found.used = false;
-    found.telegramId = null;
-    found.expiryDate = null;
-    delete found.activatedAt;
-    delete found.invalidTelegramId;
-    writeKeys(keys);
-    bot.sendMessage(msg.chat.id, `✅ Ключ \`${key}\` сброшен. Теперь его можно использовать повторно.`);
+    if (!await keysRepository.resetKey(key)) {
+        return bot.sendMessage(msg.chat.id, '❌ Ключ не найден.');
+    }
+    await bot.sendMessage(msg.chat.id, `✅ Ключ ${key} сброшен. Теперь его можно использовать повторно.`);
 });
 
-bot.onText(/\/deletekey (.+)/, (msg, match) => {
+bot.onText(/^\/deletekey\s+(.+)$/, async (msg, match) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     pruneExpiredPendingKeyDeletes();
 
     const key = match[1].trim();
-    const keys = readKeys();
-    const found = findKeyRecord(keys, key);
+    const found = await keysRepository.findByPlainKey(key);
     if (!found) return bot.sendMessage(msg.chat.id, '❌ Ключ не найден.');
 
     const token = crypto.randomBytes(9).toString('base64url');
     const keyHint = found.keyHint || key.slice(-6);
     pendingKeyDeletes.set(token, {
-        keyHash: found.keyHash || hashKey(found.key || key),
-        legacyKey: found.key && !found.keyHash ? found.key : null,
+        keyHash: found.keyHash,
         keyHint,
         requestedBy: String(msg.chat.id),
         expiresAt: Date.now() + DELETE_CONFIRM_TTL_MS
     });
 
-    bot.sendMessage(msg.chat.id, `⚠️ Удалить ключ ...${keyHint} полностью? Это действие нельзя отменить.`, {
+    await bot.sendMessage(msg.chat.id, `⚠️ Удалить ключ ...${keyHint} полностью? Связанные аренды тоже будут удалены. Это действие нельзя отменить.`, {
         reply_markup: {
             inline_keyboard: [[
                 { text: 'Подтвердить', callback_data: `deletekey:confirm:${token}` },
@@ -405,22 +350,15 @@ bot.onCallbackQuery(async (query) => {
         return;
     }
 
-    const keys = readKeys();
-    const index = keys.findIndex(record => {
-        if (record.keyHash && record.keyHash === pending.keyHash) return true;
-        return pending.legacyKey && record.key === pending.legacyKey;
-    });
-
     pendingKeyDeletes.delete(token);
     await clearCallbackButtons(query);
-    if (index === -1) {
+    const deleted = await keysRepository.deleteByHash(pending.keyHash);
+    if (!deleted) {
         await bot.answerCallbackQuery(query.id, { text: 'Ключ уже удалён или не найден.' }).catch(() => {});
         await bot.sendMessage(query.message.chat.id, `ℹ️ Ключ ...${pending.keyHint} уже удалён или не найден.`);
         return;
     }
 
-    keys.splice(index, 1);
-    writeKeys(keys);
     await bot.answerCallbackQuery(query.id, { text: 'Ключ удалён.' }).catch(() => {});
     await bot.sendMessage(query.message.chat.id, `✅ Ключ ...${pending.keyHint} полностью удалён.`);
 });
@@ -452,21 +390,24 @@ bot.onText(/\/delwebhook/, async (msg) => {
         bot.sendMessage(msg.chat.id, '❌ Не удалось удалить webhook.');
     }
 });
-bot.onText(/\/showrentdata/, (msg) => {
+bot.onText(/^\/showrentdata(?:@\w+)?$/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    const data = readRentData();
-    const rentals = data.rentals || [];
+    const rentals = await rentalsRepository.listRentals();
     if (!rentals.length) {
-        bot.sendMessage(msg.chat.id, '📭 Нет аренд в rent-data.json');
+        await bot.sendMessage(msg.chat.id, '📭 В базе нет аренд.');
         return;
     }
-    const info = rentals.map(r => `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified || false}`).join('\n');
-    bot.sendMessage(msg.chat.id, `📋 Аренды:\n${info}`);
+    await sendLongMessage(msg.chat.id, [
+        '📋 Аренды:',
+        ...rentals.map(r =>
+            `${r.propertyName}: ${r.start} → ${r.end}, tgId=${r.telegramId}, notified=${r.notified}`
+        )
+    ]);
 });
-bot.onText(/\/forcecheck/, async (msg) => {
+bot.onText(/^\/forcecheck(?:@\w+)?$/, async (msg) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
     await checkRentalsAndNotify();
-    bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
+    await bot.sendMessage(msg.chat.id, '✅ Принудительная проверка выполнена');
 });
 
 // ========== ЭНДПОИНТЫ ДЛЯ ПРИЛОЖЕНИЯ ==========
@@ -474,27 +415,27 @@ app.get('/status', (req, res) => {
     res.json({ status: 'OK', service: 'Resell Control Bot' });
 });
 
-function activateKey(req, res) {
+async function activateKey(req, res) {
     const { key, telegramId } = req.body;
     if (!isValidTelegramId(String(telegramId || ''))) {
         return res.status(400).json({ valid: false, message: 'Invalid Telegram ID' });
     }
-    const keys = readKeys();
-    const found = findKeyRecord(keys, key);
-    if (!found) return res.json({ valid: false, message: 'Неверный ключ' });
-    migrateKeyRecord(found);
-    if (found.used && (!found.expiryDate || new Date(found.expiryDate) <= new Date())) {
+    const result = await keysRepository.activateKey(key, String(telegramId), SUBSCRIPTION_DAYS);
+    if (result.status === 'not_found') {
+        return res.json({ valid: false, message: 'Неверный ключ' });
+    }
+    if (result.status === 'expired') {
         return res.json({ valid: false, message: 'Срок действия ключа истёк' });
     }
-    if (found.used && String(found.telegramId) !== String(telegramId)) {
+    if (result.status === 'bound_to_another_user') {
         return res.json({ valid: false, message: 'Ключ уже привязан к другому Telegram ID' });
     }
-    if (!found.used) found.expiryDate = getSubscriptionExpiry();
-    found.used = true;
-    found.telegramId = String(telegramId);
-    found.activatedAt = found.activatedAt || new Date().toISOString();
-    writeKeys(keys);
-    res.json({ valid: true, expiryDate: found.expiryDate, sessionToken: issueSession(found) });
+    const found = result.record;
+    res.json({
+        valid: true,
+        expiryDate: found.expiryDate,
+        sessionToken: issueSession(found)
+    });
 }
 
 app.post('/activate', activationLimiter, activateKey);
@@ -519,51 +460,40 @@ app.post('/api/rental-ended', requireSession, async (req, res) => {
     try {
         await bot.sendMessage(telegramId, message);
         if (typeof rentalId === 'string' && rentalId) {
-            const data = readRentData();
-            const rental = (data.rentals || []).find(item =>
-                item.id === rentalId && item.subscriptionId === req.subscription.payload.sub
+            await rentalsRepository.endRentalEarly(
+                rentalId,
+                req.subscription.record.id,
+                new Date(endDate)
             );
-            if (rental) {
-                rental.end = new Date(endDate).toISOString();
-                rental.notified = true;
-                rental.endedEarly = true;
-                writeRentData(data);
-            }
         }
         res.json({ ok: true });
     } catch (err) {
         console.error(`Ошибка отправки пользователю ${telegramId}:`, err.message);
         if (err.message.includes('chat not found')) {
-            const keys = readKeys();
-            const keyRecord = keys.find(k => k.keyHash === req.subscription.payload.sub);
-            if (keyRecord) {
-                keyRecord.used = false;
-                keyRecord.telegramId = null;
-                keyRecord.expiryDate = null;
-                keyRecord.invalidTelegramId = telegramId;
-                delete keyRecord.activatedAt;
-                writeKeys(keys);
-                console.log(`Сброшена подписка с невалидным Telegram ID`);
-            }
+            await keysRepository.invalidateTelegramId(
+                req.subscription.payload.sub,
+                telegramId
+            );
+            console.log('Сброшена подписка с невалидным Telegram ID');
         }
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Failed to process rental notification' });
     }
 });
 
-app.post('/api/update-telegram-id', requireSession, (req, res) => {
+app.post('/api/update-telegram-id', requireSession, async (req, res) => {
     const { telegramId } = req.body;
     if (!isValidTelegramId(String(telegramId || ''))) {
         return res.status(400).json({ error: 'Invalid Telegram ID' });
     }
-    const keys = readKeys();
-    const found = keys.find(k => k.keyHash === req.subscription.payload.sub);
+    const found = await keysRepository.updateTelegramId(
+        req.subscription.payload.sub,
+        String(telegramId)
+    );
     if (!found) return res.status(404).json({ error: 'Key not found' });
-    found.telegramId = String(telegramId);
-    writeKeys(keys);
     res.json({ ok: true, sessionToken: issueSession(found) });
 });
 
-app.post('/api/add-rental', requireSession, (req, res) => {
+app.post('/api/add-rental', requireSession, async (req, res) => {
     const { propertyName, start, end, total } = req.body;
     const safePropertyName = cleanText(propertyName, 100);
     const numericTotal = Number(total);
@@ -572,29 +502,50 @@ app.post('/api/add-rental', requireSession, (req, res) => {
         numericTotal < 0 || numericTotal > 1000000000) {
         return res.status(400).json({ error: 'Invalid rental data' });
     }
-    const data = readRentData();
     const newRental = {
         id: crypto.randomUUID(),
+        subscriptionKeyId: req.subscription.record.id,
         propertyName: safePropertyName,
         start: new Date(start).toISOString(),
         end: new Date(end).toISOString(),
         originalEnd: new Date(end).toISOString(),
         total: numericTotal,
-        telegramId: req.subscription.payload.telegramId,
-        subscriptionId: req.subscription.payload.sub
+        telegramId: req.subscription.payload.telegramId
     };
-    data.rentals = data.rentals || [];
-    data.rentals.push(newRental);
-    writeRentData(data);
+    await rentalsRepository.addRental(newRental);
     res.json({ ok: true, rentalId: newRental.id });
 });
 
-app.get('/healthz', (req, res) => res.sendStatus(200));
+app.get('/healthz', async (req, res) => {
+    try {
+        await query('SELECT 1');
+        res.sendStatus(200);
+    } catch {
+        res.sendStatus(503);
+    }
+});
+
+app.use((error, req, res, next) => {
+    console.error('Server request failed:', error);
+    if (res.headersSent) return next(error);
+    res.status(503).json({ error: 'Database temporarily unavailable' });
+});
 
 const PORT = process.env.PORT || 3000;
-if (require.main === module) app.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
-    setInterval(() => {
+async function startServer() {
+    await initializeDatabase();
+    if (TELEGRAM_POLLING) {
+        await bot.deleteWebHook({ drop_pending_updates: true }).catch(error => {
+            console.error('Не удалось удалить Telegram webhook:', error.message);
+        });
+        bot.startPolling();
+    }
+
+    const server = app.listen(PORT, () => {
+        console.log(`Сервер запущен на порту ${PORT}`);
+        console.log('🤖 Бот запущен!');
+    });
+    const rentalTimer = setInterval(() => {
         checkRentalsAndNotify().catch(error => {
             console.error('Ошибка автоматической проверки аренд:', error);
         });
@@ -602,6 +553,26 @@ if (require.main === module) app.listen(PORT, () => {
     checkRentalsAndNotify().catch(error => {
         console.error('Ошибка первичной проверки аренд:', error);
     });
-});
+
+    async function shutdown() {
+        clearInterval(rentalTimer);
+        bot.stopPolling();
+        await new Promise(resolve => server.close(resolve));
+        await closeDatabase();
+    }
+    process.once('SIGTERM', () => shutdown().catch(console.error));
+    process.once('SIGINT', () => shutdown().catch(console.error));
+    return server;
+}
+
+app.locals.bot = bot;
+app.locals.initializeDatabase = initializeDatabase;
+
+if (require.main === module) {
+    startServer().catch(error => {
+        console.error('Не удалось запустить сервер:', error);
+        process.exitCode = 1;
+    });
+}
 
 module.exports = app;
