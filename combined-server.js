@@ -248,20 +248,35 @@ bot.onText(/^\/addkey\s+(.+)$/, async (msg, match) => {
     await bot.sendMessage(msg.chat.id, `✅ Ключ ${key} добавлен в базу.`);
 });
 
-bot.onText(/^\/restorekey\s+(\S+)\s+(\d+)\s+(\d{4}-\d{2}-\d{2})$/, async (msg, match) => {
+bot.onText(/^\/restorekey(?:@\w+)?(?:\s+(.+))?$/, async (msg, match) => {
     if (String(msg.chat.id) !== ADMIN_ID) return;
-    const [, key, telegramId, expiryText] = match;
-    const expiry = parseRestoreExpiry(expiryText);
+
+    const parts = (match[1] || '').trim().split(/\s+/);
+
+    if (parts.length !== 3) {
+        return bot.sendMessage(
+            msg.chat.id,
+            ':x: Формат команды: /restorekey FULL_KEY TELEGRAM_ID YYYY-MM-DD'
+        );
+    }
+
+    const [key, telegramId, expiryText] = parts;
+
     if (!isValidTelegramId(telegramId)) {
-        return bot.sendMessage(msg.chat.id, '❌ Некорректный Telegram ID.');
+        return bot.sendMessage(msg.chat.id, ':x: Некорректный Telegram ID.');
     }
+
+    const expiry = parseRestoreExpiry(expiryText);
     if (!expiry || expiry <= new Date()) {
-        return bot.sendMessage(msg.chat.id, '❌ Укажите будущую дату в формате ГГГГ-ММ-ДД.');
+        return bot.sendMessage(msg.chat.id, ':x: Укажите будущую дату в формате ГГГГ-ММ-ДД.');
     }
+
     const result = await keysRepository.restoreKey(key, telegramId, expiry);
+
     if (result.status === 'invalid') {
-        return bot.sendMessage(msg.chat.id, '❌ Ключ должен содержать от 8 до 128 символов без пробелов.');
+        return bot.sendMessage(msg.chat.id, ':x: Ключ должен содержать от 8 до 128 символов без пробелов.');
     }
+
     await bot.sendMessage(
         msg.chat.id,
         `✅ Ключ ...${result.record.keyHint} восстановлен для Telegram ID ${telegramId} до ${expiryText} включительно.`
