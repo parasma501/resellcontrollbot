@@ -9,7 +9,7 @@ const rentalsRepository = require('./repositories/rentals');
 const usersRepository = require('./repositories/users');
 
 // ======== КОНФИГУРАЦИЯ (ДО СОЗДАНИЯ БОТА) ========
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const BOT_TOKEN = (process.env.BOT_TOKEN || '').trim();
 const ADMIN_ID = process.env.ADMIN_ID;
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const TELEGRAM_POLLING = process.env.DISABLE_TELEGRAM_POLLING !== 'true';
