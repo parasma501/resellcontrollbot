@@ -9,10 +9,11 @@
   "scripts": {
     "start": "node combined-server.js",
     "start:payments": "node payment-server.js",
+    "db:migrate": "node scripts/migrate.js",
     "desktop": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --x64",
-    "check": "node --check combined-server.js && node --check payment-server.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check telegram-client.js",
+    "check": "node --check combined-server.js && node --check payment-server.js && node --check db.js && node --check repositories/keys.js && node --check repositories/rentals.js && node --check repositories/users.js && node --check repositories/payments.js && node --check scripts/migrate.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check telegram-client.js",
     "test": "node --test --experimental-test-isolation=none"
   },
   "build": {
@@ -42,10 +43,12 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "electron": "^42.4.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "pg-mem": "^3.0.14"
   }
 }
